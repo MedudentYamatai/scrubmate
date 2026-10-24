@@ -9,6 +9,8 @@ dependencies = [
     "robot-descriptions>=1.15",
     "numpy>=1.26",
     "pillow>=10.0",
+    "imageio>=2.34",
+    "imageio-ffmpeg>=0.5",
 ]
 
 [tool.uv]

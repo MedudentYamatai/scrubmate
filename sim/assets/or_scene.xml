@@ -1,0 +1,135 @@
+<!--
+  手術室シーン (ロボット以外の固定物)。
+  座標系: ロボット台座の中心を原点とし、x = ロボットの正面方向, y = 左, z = 上 [m]。
+  Panda と器械 5 本は sim/scene.py が MjSpec で後から追加する。
+
+  レイアウト (上から見た図。x が上向き)
+                       x
+                       ↑
+     [術野 / 術者の手]   |   [器械台: 5 スロット]   [返却トレイ]
+          y=+0.5       |      y=-0.18 … +0.18       y≈-0.40
+  ←y ─────────────── [Panda] (原点, 台座の上 z=0.6)
+-->
+<mujoco model="or_scene">
+  <compiler angle="radian" autolimits="true"/>
+
+  <!--
+    cone="elliptic" + impratio="10": 摩擦円錐を楕円で正確に扱い、接線方向 (滑り) の拘束を強める。
+    把持のように「摩擦だけで物を持ち上げる」場面で滑りにくくなる、MuJoCo 公式推奨の設定。
+  -->
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10"/>
+
+  <visual>
+    <global offwidth="1280" offheight="960" azimuth="150" elevation="-25"/>
+    <headlight diffuse="0.25 0.25 0.25" ambient="0.25 0.25 0.25" specular="0 0 0"/>
+    <quality shadowsize="4096"/>
+  </visual>
+
+  <statistic center="0.4 0 0.8" extent="1.2"/>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.85 0.9 0.92" rgb2="0.55 0.6 0.65" width="512" height="3072"/>
+    <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.62 0.66 0.66" rgb2="0.58 0.62 0.62" width="300" height="300"/>
+    <material name="floor" texture="floor_tex" texrepeat="8 8" reflectance="0.05"/>
+    <material name="pedestal" rgba="0.35 0.37 0.4 1"/>
+    <!-- 器械台は滅菌ドレープで覆う想定の濃い青緑。銀色の器械とのコントラストを確保する -->
+    <material name="table_top" rgba="0.16 0.3 0.38 1" specular="0.1" shininess="0.1"/>
+    <material name="table_leg" rgba="0.6 0.62 0.65 1" specular="0.5"/>
+    <material name="bar" rgba="0.25 0.27 0.3 1" specular="0.3"/>
+    <material name="tray" rgba="0.55 0.58 0.6 1" specular="0.7" shininess="0.6"/>
+    <material name="drape" rgba="0.25 0.5 0.55 1"/>
+    <material name="glove" rgba="0.86 0.78 0.62 1"/>
+  </asset>
+
+  <default>
+    <!-- 固定物は全部この class。衝突は取る -->
+    <default class="fixture">
+      <geom type="box" condim="3" friction="1 0.005 0.0001"/>
+    </default>
+    <!-- 見た目だけ (衝突なし)。術者の手マーカーなど -->
+    <default class="visual_only">
+      <geom contype="0" conaffinity="0" group="1"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light name="key" pos="0.6 -0.6 2.6" dir="-0.2 0.2 -1" directional="false" diffuse="0.5 0.5 0.5" castshadow="true"/>
+    <light name="fill" pos="-0.5 0.8 2.4" dir="0.3 -0.3 -1" diffuse="0.35 0.35 0.35" castshadow="false"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="floor"/>
+
+    <!-- ロボット台座: Panda はこの上面 (z=0.6) に取り付ける -->
+    <geom name="pedestal" class="fixture" pos="0 0 0.3" size="0.13 0.13 0.3" material="pedestal"/>
+
+    <!-- 器械台 (メイヨー台)。天板上面 z=0.71 -->
+    <body name="instrument_table" pos="0.48 -0.14 0">
+      <geom name="table_top" class="fixture" pos="0 0 0.70" size="0.16 0.40 0.01" material="table_top"/>
+      <geom name="table_leg" class="fixture" type="cylinder" pos="0 0 0.345" size="0.025 0.345" material="table_leg"/>
+      <geom name="table_foot" class="fixture" pos="0 0 0.01" size="0.12 0.2 0.01" material="table_leg"/>
+    </body>
+
+    <!--
+      器械ラック: y 方向に走る 2 本の浮いた支持バー (上面 z=0.75, 天板から 4cm 浮いている)。
+      器械は x 方向に寝かせて 2 本のバーに渡す。バーの間の空間に指が潜り込めるので、
+      器械の左右を指で挟んでも指先が天板に当たらない。
+      バーの x 位置 = スロット中心 ±0.035 (器械の重心がバーの間に来るように器械側を作る)。
+    -->
+    <body name="instrument_rack" pos="0.48 0 0.71">
+      <geom name="rack_bar_near" class="fixture" pos="-0.035 0 0.035" size="0.005 0.235 0.005" material="bar"/>
+      <geom name="rack_bar_far"  class="fixture" pos=" 0.035 0 0.035" size="0.005 0.235 0.005" material="bar"/>
+      <geom name="rack_post_1" class="fixture" pos="-0.035  0.23 0.0175" size="0.005 0.005 0.0175" material="bar"/>
+      <geom name="rack_post_2" class="fixture" pos="-0.035 -0.23 0.0175" size="0.005 0.005 0.0175" material="bar"/>
+      <geom name="rack_post_3" class="fixture" pos=" 0.035  0.23 0.0175" size="0.005 0.005 0.0175" material="bar"/>
+      <geom name="rack_post_4" class="fixture" pos=" 0.035 -0.23 0.0175" size="0.005 0.005 0.0175" material="bar"/>
+    </body>
+
+    <!--
+      返却トレイ: 浅い箱の中に、器械ラックと同じ高さ・間隔の支持バーを 2 本入れてある。
+      術者が返した器械をロボットがまた掴めるようにするため (トレイの底に直置きだと指が入らない)。
+    -->
+    <body name="return_tray" pos="0.48 -0.40 0.71">
+      <geom name="tray_floor" class="fixture" pos="0 0 0.003" size="0.115 0.105 0.003" material="tray"/>
+      <geom name="tray_wall_near" class="fixture" pos="-0.115 0 0.025" size="0.003 0.105 0.025" material="tray"/>
+      <geom name="tray_wall_far"  class="fixture" pos=" 0.115 0 0.025" size="0.003 0.105 0.025" material="tray"/>
+      <geom name="tray_wall_left" class="fixture" pos="0  0.105 0.025" size="0.118 0.003 0.025" material="tray"/>
+      <geom name="tray_wall_right" class="fixture" pos="0 -0.105 0.025" size="0.118 0.003 0.025" material="tray"/>
+      <geom name="tray_bar_near" class="fixture" pos="-0.035 0 0.035" size="0.005 0.1 0.005" material="bar"/>
+      <geom name="tray_bar_far"  class="fixture" pos=" 0.035 0 0.035" size="0.005 0.1 0.005" material="bar"/>
+      <geom name="tray_post_1" class="fixture" pos="-0.035  0.095 0.019" size="0.005 0.005 0.013" material="bar"/>
+      <geom name="tray_post_2" class="fixture" pos="-0.035 -0.095 0.019" size="0.005 0.005 0.013" material="bar"/>
+      <geom name="tray_post_3" class="fixture" pos=" 0.035  0.095 0.019" size="0.005 0.005 0.013" material="bar"/>
+      <geom name="tray_post_4" class="fixture" pos=" 0.035 -0.095 0.019" size="0.005 0.005 0.013" material="bar"/>
+    </body>
+
+    <!-- 術野: 手術台 + ドレープ。ロボットの左側 (+y) -->
+    <body name="surgical_field" pos="0.2 0.78 0">
+      <geom name="or_table" class="fixture" pos="0 0 0.38" size="0.35 0.26 0.38" material="table_leg"/>
+      <geom name="drape" class="fixture" pos="0 0 0.775" size="0.37 0.28 0.015" material="drape"/>
+      <geom name="patient" class="fixture" type="capsule" pos="0 0.02 0.85" size="0.13 0.28" euler="0 1.5708 0" material="drape"/>
+    </body>
+
+    <!--
+      術者の手マーカー: mocap body = 物理計算の外から位置を直接書き換えられる body (スクリプトで動かす)。
+      衝突は無効。受け渡しの瞬間だけ weld 拘束で器械と結合する (Phase 6)。
+    -->
+    <body name="surgeon_hand" mocap="true" pos="0.32 0.48 0.98">
+      <geom name="hand_palm" class="visual_only" type="box" size="0.045 0.035 0.012" material="glove"/>
+      <geom name="hand_thumb" class="visual_only" type="capsule" fromto="-0.02 -0.035 0 -0.04 -0.065 0" size="0.009" material="glove"/>
+      <geom name="hand_fingers" class="visual_only" type="box" pos="-0.07 0 0" size="0.03 0.032 0.009" material="glove"/>
+      <geom name="hand_wrist" class="visual_only" type="capsule" fromto="0.045 0 0 0.13 0.02 0.03" size="0.03" material="glove"/>
+      <site name="hand_handoff" pos="0 0 -0.03" size="0.006" rgba="1 0.3 0.3 0.6"/>
+    </body>
+
+    <!-- カメラの注視点 (見えない) -->
+    <body name="scene_center" pos="0.36 0.0 0.78"/>
+
+    <!--
+      検出用カメラ: 器械台と返却トレイの真上 (高さ 0.8m 上) から真下を向く。
+      xyaxes = 画像の右方向 (x) と上方向 (y) を world で指定する。
+      ここでは 画像の右 = world の -y、画像の上 = world の +x (ロボットから遠い側)。
+      fovy は縦方向の画角。内部パラメータ (焦点距離 f) は fovy と画像高さ H から f = H / (2 tan(fovy/2))。
+    -->
+    <camera name="detect_cam" pos="0.48 -0.12 1.55" xyaxes="0 -1 0 1 0 0" fovy="45"/>
+    <!-- 動画用の全体カメラ -->
+    <camera name="overview_cam" pos="1.45 0.75 1.55" mode="targetbody" target="scene_center" fovy="50"/>
+  </worldbody>
+</mujoco>

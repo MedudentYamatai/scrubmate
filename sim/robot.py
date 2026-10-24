@@ -27,6 +27,9 @@ GRIPPER_CLOSED = 0.0
 # Menagerie の hand には TCP の site が無いので、ここで定数として持つ。
 HAND_TO_TCP = 0.1034
 
+# home 姿勢の関節角 [rad] (Menagerie の keyframe "home" の値)
+HOME_QPOS = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853])
+
 
 def panda_dir() -> Path:
     """Menagerie の franka_emika_panda ディレクトリ (初回は clone が走る)。"""
@@ -47,12 +50,24 @@ def load_panda_scene() -> tuple[mujoco.MjModel, mujoco.MjData]:
 
 
 def reset_to_home(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    """keyframe "home" (肘を曲げて手先を下に向けた姿勢) に qpos と ctrl を合わせる。"""
-    key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home")
-    mujoco.mj_resetDataKeyframe(model, data, key_id)
+    """home 姿勢 (Menagerie の keyframe "home" と同じ: 肘を曲げて手先を下に向けた姿勢) にする。
+
+    keyframe は qpos 全体 (器械などシーン全体) の値を持つので、シーンを組み替えると使えない。
+    関節名で指定すれば、他の物体が増えても壊れない。
+    """
+    mujoco.mj_resetData(model, data)
+    set_arm_qpos(model, data, HOME_QPOS)
+    data.ctrl[[model.actuator(a).id for a in ARM_ACTUATORS]] = HOME_QPOS
+    data.joint("finger_joint1").qpos[0] = data.joint("finger_joint2").qpos[0] = 0.04
+    data.ctrl[model.actuator(GRIPPER_ACTUATOR).id] = GRIPPER_OPEN
     # mj_forward: qpos から全 body の位置姿勢 (順運動学) や接触などを計算する。
     # 時間は進めない。描画や姿勢の読み出しの前に必要。
     mujoco.mj_forward(model, data)
+
+
+def set_arm_qpos(model: mujoco.MjModel, data: mujoco.MjData, q: np.ndarray) -> None:
+    for name, v in zip(ARM_JOINTS, q):
+        data.joint(name).qpos[0] = v
 
 
 def tcp_pose(model: mujoco.MjModel, data: mujoco.MjData) -> tuple[np.ndarray, np.ndarray]:
