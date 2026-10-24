@@ -1,0 +1,17 @@
+[project]
+name = "scrub-nurse-robot"
+version = "0.1.0"
+description = "器械出し＋器械カウントを行うロボットアームの MuJoCo シミュレーション"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mujoco>=3.3",
+    "robot-descriptions>=1.15",
+    "numpy>=1.26",
+    "pillow>=10.0",
+]
+
+[tool.uv]
+# アプリ (スクリプト群) として使うので、パッケージとしてはビルドしない。
+# `uv run python -m sim.xxx` はリポジトリ直下から実行する前提。
+package = false

@@ -1,0 +1,19 @@
+# Python / uv
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 秘密情報・個人的なメモ
+.env
+
+# 生成物 (大きいもの・再生成できるもの)
+outputs/
+runs/
+datasets/
+*.mp4
+!docs/media/*.mp4
+
+# macOS
+.DS_Store
+claude_code_prompt.md
