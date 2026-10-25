@@ -15,11 +15,13 @@
 """
 
 import queue
+import shutil
 import sys
 import termios
 import threading
 import time
 import tty
+import unicodedata
 
 import mujoco
 import mujoco.viewer
@@ -58,6 +60,19 @@ def rot_from_quat(q: np.ndarray) -> np.ndarray:
     R = np.zeros(9)
     mujoco.mju_quat2Mat(R, q)
     return R.reshape(3, 3)
+
+
+def fit_line(text: str) -> str:
+    """端末の幅に収まるよう切り詰める。はみ出すと折り返され、\r で行頭に戻れず表示が重なっていくため。
+    日本語や記号は 2 マスぶん使うので、文字数ではなく表示幅で数える。"""
+    width = shutil.get_terminal_size().columns - 1
+    out, used = "", 0
+    for ch in text:
+        w = 2 if unicodedata.east_asian_width(ch) in ("W", "F", "A") else 1
+        if used + w > width:
+            break
+        out, used = out + ch, used + w
+    return out
 
 
 def finger_gap_mm(data: mujoco.MjData) -> float:
@@ -159,12 +174,12 @@ def run_loop(model, data, viewer, keys, stop, mocap_id, init_state, target_to_tc
                 # ヤコビアンの最小特異値: 0 に近いほど「その方向に手先を動かせない」= 特異点に近い
                 J = ctrl.ik.jacobian(cmd_pos)
                 sv_min = np.linalg.svd(J[:3], compute_uv=False).min()
-                warn = "  ⚠ 目標に届いていない (可動範囲外?)" if np.linalg.norm(e[:3]) > 0.01 else ""
-                sys.stdout.write(
-                    f"\r目標 {np.round(tgt_pos, 3)}  IK誤差 {np.linalg.norm(e[:3]) * 1000:5.1f}mm "
-                    f"{np.degrees(np.linalg.norm(e[3:])):4.1f}°  特異値min {sv_min:.3f}  "
-                    f"指の間隔 {finger_gap_mm(data):4.1f}mm  "
-                    f"step {step * 1000:.0f}mm{warn}        ")
+                warn = "  ⚠届いていない" if np.linalg.norm(e[:3]) > 0.01 else ""
+                line = (f"目標 {np.round(tgt_pos, 3)}  IK誤差 {np.linalg.norm(e[:3]) * 1000:.1f}mm "
+                        f"{np.degrees(np.linalg.norm(e[3:])):.1f}°  特異値min {sv_min:.3f}  "
+                        f"指 {finger_gap_mm(data):.0f}mm  step {step * 1000:.0f}mm{warn}")
+                # \033[K = カーソルから行末までを消す (前回の表示の残りを消すため)
+                sys.stdout.write("\r" + fit_line(line) + "\033[K")
                 sys.stdout.flush()
 
             dt = CONTROL_DT - (time.time() - t_start)

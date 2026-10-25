@@ -95,12 +95,25 @@ def run_cycle(ctrl: ArmController, kind: str, src, dst, log: list) -> dict:
     # 成功の定義: 持ち上がった・置き位置誤差 1cm 以内・向きの誤差 10° 以内・隣を 5mm 以上動かしていない
     res["success"] = bool(res["lifted"] and res["place_err_mm"] < 10 and res["place_yaw_err_deg"] < 10
                           and res["neighbor_disturb_mm"] < 5)
+    # 失敗理由 (成功しなかったときだけ表示)。持ち上がらなかった場合、slip / place_err は
+    # 「手と、器械台に残された器械との距離」になるので、滑りや置き誤差としては意味を持たない
+    reasons = []
+    if not res["lifted"]:
+        reasons.append("持ち上がらず器械は元の場所に残った (slip/place_err は無意味)")
+    elif res["place_err_mm"] >= 10:
+        reasons.append("置き位置が 1cm 以上ずれた")
+    if res["lifted"] and res["place_yaw_err_deg"] >= 10:
+        reasons.append("向きが 10° 以上ずれた")
+    if res["neighbor_disturb_mm"] >= 5:
+        reasons.append("隣の器械を動かした")
     log.append(res)
     flag = "OK " if res["success"] else "NG "
     print(f"{flag}{kind:14s} {src}→{dst}  lifted={res['lifted']}  width={res['closed_width_mm']:.1f}mm  "
           f"offset={res['grasp_offset_mm']:.1f}mm  slip={res['slip_mm']:.1f}mm/{res['slip_deg']:.1f}°  "
           f"place_err={res['place_err_mm']:.1f}mm/{res['place_yaw_err_deg']:.1f}°  "
           f"neighbor={res['neighbor_disturb_mm']:.1f}mm  tcp_err={res['tcp_static_err_mm']:.1f}mm", flush=True)
+    for r in reasons:
+        print(f"     └ 失敗理由: {r}", flush=True)
     return res
 
 
