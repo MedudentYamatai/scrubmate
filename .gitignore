@@ -20,3 +20,7 @@ claude_code_prompt.md
 
 # MuJoCo が自動で書き出すログ
 MUJOCO_LOG.TXT
+
+# YOLO の事前学習済み重み (自動ダウンロード)。学習済みの本番重みだけは同梱する
+*.pt
+!perception/weights/*.pt

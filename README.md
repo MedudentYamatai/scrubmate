@@ -3,7 +3,7 @@
 手術室の「器械出し看護師」役をするロボットアームの MuJoCo シミュレーション。
 音声指示で器械を受け渡しし、画像ベースの器械カウントで遺残疑いを検出する。
 
-> 開発中 (Phase 1: シーン構築・IK・真値での pick & place)。完成時に構成図・評価結果・制限事項を追記する。
+> 開発中 (Phase 2: 合成データ・YOLO-seg まで)。完成時に構成図・評価結果・制限事項を追記する。
 
 ## セットアップ
 
@@ -50,6 +50,18 @@ uv run python -m control.pick_place_demo [--video] [--only scalpel] [--no-gravco
 
 `scripts/mjpython.sh` が必要な理由: uv の Python は `libpython` を `@rpath` で参照しており、
 `mjpython` の .app バンドル経由だと解決できないため、`DYLD_LIBRARY_PATH` を補っている。
+
+### Phase 2: 合成データ生成と YOLO-seg 学習
+
+```bash
+uv run python -m perception.gen_dataset                 # 1500 枚 (train 1200 / val 300) → datasets/instruments/ (約 8 分)
+uv run python -m perception.show_labels datasets/instruments --split train   # 正解ラベルを重ねた確認画像
+uv run python -m perception.train --export              # yolo11n-seg を MPS で 30 エポック (約 45 分)
+uv run python -m perception.evaluate                    # mAP・混同行列・カウント一致率 → outputs/phase2/eval_main/
+```
+
+学習済み重み `perception/weights/instruments_seg.pt` (6MB) は同梱している。学習をやり直さなくても評価・推論できる。
+書き出し時に、学習時の絶対パスと git 情報を checkpoint から取り除いている (`perception/train.py` の `export_weights`)。
 
 ## ディレクトリ構成
 
