@@ -27,7 +27,10 @@ TABLE_SLOTS = {i: (0.48, y) for i, y in enumerate([0.18, 0.09, 0.0, -0.09, -0.18
 DEFAULT_LAYOUT = {0: "scalpel", 1: "needle_holder", 2: "forceps", 3: "scissors", 4: "pean"}
 # 返却トレイ (器械台の術野側の端) の中心と、トレイ内の置き場 (3 箇所)
 TRAY_CENTER = (0.48, 0.38)
-TRAY_SLOTS = {i: (0.48, TRAY_CENTER[1] + dy) for i, dy in enumerate([-0.075, 0.0, 0.075])}
+TRAY_INNER_HALF = (0.112, 0.102)  # 壁の内側の半分の寸法 (x, y) [m]
+# 置き場の間隔は 6cm。最初は 7.5cm だったが、端の置き場は壁まで 2.7cm しかなく、指が壁に当たって 5 種類とも掴めなかった
+# (Phase 5 で発見。Phase 3 の pick & place は中央の置き場しか使っていなかった)。指 5.5cm 開きで掴めるのは壁まで 4.2cm 以上
+TRAY_SLOTS = {i: (0.48, TRAY_CENTER[1] + dy) for i, dy in enumerate([-0.06, 0.0, 0.06])}
 
 # アームのリンク (重力補償をかける対象)
 ARM_BODIES = [f"link{i}" for i in range(1, 8)] + ["hand", "left_finger", "right_finger"]
@@ -110,6 +113,26 @@ def build(opts: SceneOptions | None = None) -> tuple[mujoco.MjModel, mujoco.MjDa
     data = mujoco.MjData(model)
     robot.reset_to_home(model, data)
     return model, data
+
+
+def hand_grab(model: mujoco.MjModel, data: mujoco.MjData, kind: str) -> None:
+    """術者の手が器械を持つ: 今の手と器械の位置関係のまま weld で固定する (術者はスクリプトなので拘束で代用してよい)。
+    weld の eq_data は [anchor (3), 器械の位置 (手の座標系, 3), 器械の向き (手から見た quat, 4), torquescale, …]。
+    anchor は MjSpec の既定値が (0, 1, 0) になっていて、そのままだと器械が 1m ずれた所へ引っ張られた → 0 にする。"""
+    eq = model.equality(f"handoff_{kind}").id
+    hand, inst = data.body("surgeon_hand"), data.body(kind)
+    R = hand.xmat.reshape(3, 3)
+    q_inv, rel_q = np.zeros(4), np.zeros(4)
+    mujoco.mju_negQuat(q_inv, hand.xquat)
+    mujoco.mju_mulQuat(rel_q, q_inv, inst.xquat)
+    model.eq_data[eq, 0:3] = 0.0
+    model.eq_data[eq, 3:6] = R.T @ (inst.xpos - hand.xpos)
+    model.eq_data[eq, 6:10] = rel_q
+    data.eq_active[eq] = 1
+
+
+def hand_release(model: mujoco.MjModel, data: mujoco.MjData, kind: str) -> None:
+    data.eq_active[model.equality(f"handoff_{kind}").id] = 0
 
 
 def instrument_pose(model: mujoco.MjModel, data: mujoco.MjData, kind: str) -> tuple[np.ndarray, float]:

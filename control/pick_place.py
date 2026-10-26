@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from control.motion import ArmController, choose_grasp_yaw, grasp_rotation
-from sim import robot
+from sim import robot, scene
 
 APPROACH_HEIGHT = 0.12  # 把持点の何 m 上から降りるか
 LIFT_HEIGHT = 0.15  # 掴んだ後にどれだけ持ち上げるか
@@ -104,6 +104,25 @@ def plan_transfer(ctrl: ArmController, grasp_pos: np.ndarray, inst_yaw: float,
     return best
 
 
+NARROW_OPEN_WIDTH = 0.04  # 壁際で使う狭い開き。器械の把持点の幅は最大 19mm なので、片側 1cm の余裕がある
+FINGER_OUTSIDE = 0.017  # 指の内側の面から外側までの厚み + 余裕 [m]。実測: 5.5cm 開きで壁まで 3.7cm だと当たり、4.2cm なら当たらない
+
+
+def open_width_for(grasp_pos: np.ndarray, yaw: float) -> float:
+    """返却トレイの壁際では、指が壁に当たらないように開きを狭める。指は器械の長手方向 yaw と直交する向きに開く。"""
+    cx, cy = scene.TRAY_CENTER
+    hx, hy = scene.TRAY_INNER_HALF
+    if abs(grasp_pos[0] - cx) > hx or abs(grasp_pos[1] - cy) > hy:
+        return OPEN_WIDTH  # トレイの外 (器械台)
+    n = np.array([-np.sin(yaw), np.cos(yaw)])  # 指が開く向き
+    for w in (OPEN_WIDTH, NARROW_OPEN_WIDTH):
+        reach = w / 2 + FINGER_OUTSIDE
+        tips = [grasp_pos[:2] + s * reach * n for s in (-1, 1)]
+        if all(abs(t[0] - cx) <= hx and abs(t[1] - cy) <= hy for t in tips):
+            return w
+    return NARROW_OPEN_WIDTH
+
+
 @dataclass
 class GraspResult:
     closed_width: float  # 閉じた後の指の間隔 [m]。ほぼ 0 なら「何も挟めていない」
@@ -115,15 +134,16 @@ def finger_width(ctrl: ArmController) -> float:
     return float(d.joint("finger_joint1").qpos[0] + d.joint("finger_joint2").qpos[0])
 
 
-def pick(ctrl: ArmController, grasp_pos: np.ndarray, yaw: float, plan: TransferPlan | None = None) -> GraspResult:
+def pick(ctrl: ArmController, grasp_pos: np.ndarray, yaw: float, plan: TransferPlan | None = None,
+         open_width: float | None = None) -> GraspResult:
     """yaw = 器械の長手方向。plan を渡すと、その掴み方 (手の yaw と真上での関節角) を使う。
-    渡さなければ yaw と yaw+π のうち今の手に近い方で掴む。"""
+    渡さなければ yaw と yaw+π のうち今の手に近い方で掴む。open_width = 近づくときの指の開き (省略すると、壁際だけ狭める)。"""
     _, R_now = ctrl.commanded_tcp()
     yaw = plan.pick_yaw if plan else choose_grasp_yaw(yaw, R_now)
     R = grasp_rotation(yaw)
     above = grasp_pos + [0, 0, APPROACH_HEIGHT]
 
-    ctrl.set_gripper(OPEN_WIDTH)
+    ctrl.set_gripper(open_width if open_width is not None else open_width_for(grasp_pos, yaw))
     if plan:
         # 計画した腕の構えへ関節空間で直接動く (手先の直線移動だと、途中の IK が別の構えに流れることがある)
         ctrl.move_joints(plan.q_above, duration=1.6)
