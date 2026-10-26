@@ -3,6 +3,7 @@
     uv run python -m demo.run_demo                 # 本編 + OP/ED + タイトル + 結果のまとめ → outputs/phase6/demo.mp4
     uv run python -m demo.run_demo --main-only     # 本編だけ (確認用。OP/ED をつながない)
     uv run python -m demo.run_demo --no-video      # 映像を描かずに流れだけ確かめる (速い)
+    uv run python -m demo.run_demo --main-only --fallback   # 予備のルールだけで解釈して本編を書き出す (実験用)
 
 台本 (BEATS): 「どんな状況になったら」「何をするか」の組を順に並べたもの。
 秒数ではなく状況 (ロボットが指示待ち・術者の手が空いた など) で次へ進むので、ロボットの動きの長さが変わっても順番は崩れない。
@@ -27,6 +28,7 @@ from demo.video import (CYAN, GRAY, GREEN, RED, SPEED, WHITE, YELLOW, Composer, 
 from inventory.eval_count import settle
 from inventory.ledger import PLACE_JA, SURGEON
 from language.asr import transcribe
+from language.interpret import Interpreter
 from sim import robot, scene
 from sim.instruments import JA_NAMES
 
@@ -39,7 +41,7 @@ PILE_DY = 0.03
 
 
 class Director:
-    def __init__(self, model, data, comp: Composer | None):
+    def __init__(self, model, data, comp: Composer | None, use_llm: bool = True):
         self.model, self.data, self.comp = model, data, comp
         self.surgeon = Surgeon(model, data)
         self.ctrl = ArmController(model, data, on_step=self.on_step)
@@ -48,7 +50,7 @@ class Director:
         self.log: list[dict] = []
         ov = comp.ov if comp else None
         self.agent = ScrubNurse(model, data, self.ctrl, self.surgeon, speak=self.robot_say, show=self.show,
-                                note=self.note)
+                                note=self.note, interpreter=Interpreter(use_llm=use_llm))
         if ov is not None:
             ov.status = self.status_lines
         self.beats = self.make_beats()
@@ -221,6 +223,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-video", action="store_true")
     ap.add_argument("--main-only", action="store_true")
+    ap.add_argument("--fallback", action="store_true", help="Gemini もキャッシュも使わず、予備のルールだけで解釈する (実験用)")
     ap.add_argument("--pile-dy", type=float, default=PILE_DY, help="トレイでペアンを鑷子からずらす量 [m]")
     args = ap.parse_args()
     globals()["PILE_DY"] = args.pile_dy
@@ -237,7 +240,7 @@ def main() -> None:
     robot.set_arm_qpos(model, data, robot.PARK_QPOS)
     settle(model, data)
     comp = None if args.no_video else Composer(model, data, OUT_DIR / "main.mp4")
-    director = Director(model, data, comp)
+    director = Director(model, data, comp, use_llm=not args.fallback)
     if comp:
         mujoco.mj_forward(model, data)
         comp.ov.labels = [(t, p if p is not None else data.mocap_pos[0].copy()) for t, p in INTRO_LABELS]
