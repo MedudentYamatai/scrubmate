@@ -116,6 +116,17 @@ class ArmController:
             s = min_jerk(i / n)
             self.tick(p0 + s * (pos - p0), slerp_rot(R0, rot, s))
 
+    def move_to_turning(self, pos, yaw_from: float, yaw_to: float, duration: float) -> None:
+        """真下を向いた手のまま、直線で動きながら手の yaw を yaw_from → yaw_to へ回す。
+        move_to の球面補間は「近い回り方」を自動で選ぶので、180° 回すときにどちら回りになるか分からない。
+        ここでは数値どおりに回す (yaw_to − yaw_from が +π なら左回り、−π なら右回り)。"""
+        p0, _ = self.commanded_tcp()
+        pos = np.asarray(pos, dtype=float)
+        n = max(1, round(duration / CONTROL_DT))
+        for i in range(1, n + 1):
+            s = min_jerk(i / n)
+            self.tick(p0 + s * (pos - p0), grasp_rotation(yaw_from + s * (yaw_to - yaw_from)))
+
     def hold(self, duration: float, pos=None, rot=None) -> None:
         if pos is None:
             pos, rot = self.commanded_tcp()

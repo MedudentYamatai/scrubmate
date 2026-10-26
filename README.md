@@ -3,7 +3,7 @@
 手術室の「器械出し看護師」役をするロボットアームの MuJoCo シミュレーション。
 音声指示で器械を受け渡しし、画像ベースの器械カウントで遺残疑いを検出する。
 
-> 開発中 (Phase 2: 合成データ・YOLO-seg まで)。完成時に構成図・評価結果・制限事項を追記する。
+> 開発中 (Phase 3: カメラの推定で掴む まで)。完成時に構成図・評価結果・制限事項を追記する。
 
 ## セットアップ
 
@@ -30,8 +30,8 @@ uv run python -m sim.inspect_panda
 ### Phase 1: シーン・IK・pick & place
 
 ```bash
-# 真値を使った pick & place (5 本 × 器械台⇄トレイ往復) の計測。--video で outputs/phase1/pick_place.mp4
-uv run python -m control.pick_place_demo [--video] [--only scalpel] [--no-gravcomp] [--grip-scale 20]
+# pick & place (5 本 × 器械台⇄トレイ往復) の計測。Phase 3 以降はカメラの推定で掴む (--gt で真値)
+uv run python -m control.pick_place_demo [--video] [--only scalpel] [--gt] [--no-gravcomp] [--grip-scale 20]
 ./scripts/mjpython.sh -m control.pick_place_demo --viewer   # ビューアで実時間再生
 
 # 遠隔操作 (目標マーカーを動かすと IK で腕が追従)。キー操作は起動したターミナルで
@@ -62,6 +62,31 @@ uv run python -m perception.evaluate                    # mAP・混同行列・�
 
 学習済み重み `perception/weights/instruments_seg.pt` (6MB) は同梱している。学習をやり直さなくても評価・推論できる。
 書き出し時に、学習時の絶対パスと git 情報を checkpoint から取り除いている (`perception/train.py` の `export_weights`)。
+
+### Phase 3: カメラの推定で掴む
+
+```bash
+uv run python -m perception.eval_locate                     # 推定精度 (ランダム配置 50 通り) → outputs/phase3/locate_*.{json,jpg}
+uv run python -m control.pick_place_demo --random 1 --video # ランダム配置で往復 → outputs/phase3/pick_place_rand1.mp4
+uv run python -m control.pick_place_demo --trials 30        # ランダム配置 30 通り (300 回) をまとめて集計 (約 3.5 分)
+```
+
+掴む前に毎回、腕を待避させて検出カメラで RGB と深度を撮り、`perception/locate.py` で器械ごとに推定する。
+
+1. YOLO-seg でマスクを得る。深度を使って、マスクから欠けた器械の縁を補う。
+2. 各画素を深度で 3D に戻し、真上から見た地図 (1mm 方眼) に描き直す。こうすると透視による歪みが消える。
+3. 地図上で求める:
+   - 把持点: 重心
+   - 向き: 主成分分析 (PCA)
+   - 先端側: 外形の幅のプロファイルを形状モデルと照合
+4. 掴み方と手首の回し方を `control/pick_place.py` の `plan_transfer` で決める。Panda の手首は ±166° しか回らないので、限界に当たらない組み合わせを選ぶ。
+
+シミュレーターの真値は `--gt` での比較と評価にだけ使う。
+
+結果:
+
+- 推定精度 (250 回): 位置誤差は平均 2.1mm、先端方向の正解率は 100%
+- pick & place: 300/300 回成功
 
 ## ディレクトリ構成
 
