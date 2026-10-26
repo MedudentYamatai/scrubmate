@@ -25,8 +25,9 @@ INSTRUMENT_Z = BAR_TOP_Z + 0.005
 TABLE_SLOTS = {i: (0.48, y) for i, y in enumerate([0.18, 0.09, 0.0, -0.09, -0.18])}
 # 初期配置: スロット番号 → 器械名
 DEFAULT_LAYOUT = {0: "scalpel", 1: "needle_holder", 2: "forceps", 3: "scissors", 4: "pean"}
-# 返却トレイ内の置き場 (3 箇所)
-TRAY_SLOTS = {i: (0.48, y) for i, y in enumerate([-0.325, -0.40, -0.475])}
+# 返却トレイ (器械台の術野側の端) の中心と、トレイ内の置き場 (3 箇所)
+TRAY_CENTER = (0.48, 0.38)
+TRAY_SLOTS = {i: (0.48, TRAY_CENTER[1] + dy) for i, dy in enumerate([-0.075, 0.0, 0.075])}
 
 # アームのリンク (重力補償をかける対象)
 ARM_BODIES = [f"link{i}" for i in range(1, 8)] + ["hand", "left_finger", "right_finger"]

@@ -102,7 +102,9 @@ class Randomizer:
                 where, slot = "tray_pile", -1
                 yaw += r.normal(0, np.radians(15))  # 術者が無造作に返したように、向きも大きくばらつかせる
                 k = sorted(crowded).index(kind)
-                pos = np.array([r.uniform(0.46, 0.50), r.uniform(-0.46, -0.34), scene.INSTRUMENT_Z + 0.015 * (k + 1)])
+                cx, cy = scene.TRAY_CENTER
+                pos = np.array([r.uniform(cx - 0.02, cx + 0.02), r.uniform(cy - 0.06, cy + 0.06),
+                                scene.INSTRUMENT_Z + 0.015 * (k + 1)])
             else:
                 where, slot, (x, y) = PLACES[places[kind]]
                 d = 0.01 * self.spread

@@ -60,9 +60,9 @@
     <!-- ロボット台座: Panda はこの上面 (z=0.6) に取り付ける -->
     <geom name="pedestal" class="fixture" pos="0 0 0.3" size="0.13 0.13 0.3" material="pedestal"/>
 
-    <!-- 器械台 (メイヨー台)。天板上面 z=0.71 -->
-    <body name="instrument_table" pos="0.48 -0.14 0">
-      <geom name="table_top" class="fixture" pos="0 0 0.70" size="0.16 0.40 0.01" material="table_top"/>
+    <!-- 器械台 (メイヨー台)。天板上面 z=0.71。術野側 (+y) の端に返却トレイを載せる -->
+    <body name="instrument_table" pos="0.48 0.12 0">
+      <geom name="table_top" class="fixture" pos="0 0 0.70" size="0.16 0.38 0.01" material="table_top"/>
       <geom name="table_leg" class="fixture" type="cylinder" pos="0 0 0.345" size="0.025 0.345" material="table_leg"/>
       <geom name="table_foot" class="fixture" pos="0 0 0.01" size="0.12 0.2 0.01" material="table_leg"/>
     </body>
@@ -85,8 +85,10 @@
     <!--
       返却トレイ: 浅い箱の中に、器械ラックと同じ高さ・間隔の支持バーを 2 本入れてある。
       術者が返した器械をロボットがまた掴めるようにするため (トレイの底に直置きだと指が入らない)。
+      置き場所は器械台の術野側の端。最初は反対側 (y=-0.40) に置いていたが、術者の手から 0.89m も離れていて
+      手が届かない、とユーザーに指摘されて移した (今は術者の手から約 0.2m)。壁 (y=0.498) が術野のドレープ (y≥0.50) に重ならない位置。
     -->
-    <body name="return_tray" pos="0.48 -0.40 0.71">
+    <body name="return_tray" pos="0.48 0.38 0.71">
       <geom name="tray_floor" class="fixture" pos="0 0 0.003" size="0.115 0.105 0.003" material="tray"/>
       <geom name="tray_wall_near" class="fixture" pos="-0.115 0 0.025" size="0.003 0.105 0.025" material="tray"/>
       <geom name="tray_wall_far"  class="fixture" pos=" 0.115 0 0.025" size="0.003 0.105 0.025" material="tray"/>
@@ -126,9 +128,10 @@
       検出用カメラ: 器械台と返却トレイの真上 (高さ 0.8m 上) から真下を向く。
       xyaxes = 画像の右方向 (x) と上方向 (y) を world で指定する。
       ここでは 画像の右 = world の -y、画像の上 = world の +x (ロボットから遠い側)。
+      y 方向の中心は、器械台のスロット (y=-0.18〜0.18) と返却トレイ (y=0.38) の両方が入る位置。
       fovy は縦方向の画角。内部パラメータ (焦点距離 f) は fovy と画像高さ H から f = H / (2 tan(fovy/2))。
     -->
-    <camera name="detect_cam" pos="0.48 -0.12 1.55" xyaxes="0 -1 0 1 0 0" fovy="45"/>
+    <camera name="detect_cam" pos="0.48 0.12 1.55" xyaxes="0 -1 0 1 0 0" fovy="45"/>
     <!-- 動画用の全体カメラ -->
     <camera name="overview_cam" pos="1.45 0.75 1.55" mode="targetbody" target="scene_center" fovy="50"/>
   </worldbody>

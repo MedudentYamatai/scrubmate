@@ -34,6 +34,9 @@ uv run python -m sim.inspect_panda
 uv run python -m control.pick_place_demo [--video] [--only scalpel] [--gt] [--no-gravcomp] [--grip-scale 20]
 ./scripts/mjpython.sh -m control.pick_place_demo --viewer   # ビューアで実時間再生
 
+# シーンの確認用の静止画 (全体カメラ・検出カメラ) → outputs/phase1/
+uv run python -m sim.snapshots
+
 # 遠隔操作 (目標マーカーを動かすと IK で腕が追従)。キー操作は起動したターミナルで
 ./scripts/mjpython.sh -m control.teleop
 ```
@@ -98,8 +101,11 @@ uv run python -m control.pick_place_demo --trials 30        # ランダム配置
 
 結果:
 
-- 推定精度 (250 回): 位置誤差は平均 2.1mm、先端方向の正解率は 100%
-- pick & place: 300/300 回成功
+- 推定精度 (250 回): 位置誤差は平均 2.2mm、先端方向の正解率は 100%
+- pick & place (ランダム配置 30 通り): 300/300 回成功
+
+返却トレイは器械台の術野側の端にある (術者の手から約 0.2m)。
+最初は反対側に置いていたが、術者の手が届かないので移した。数字はすべて移した後に測り直したもの。
 
 ### Phase 4: 音声認識と指示の解釈
 
