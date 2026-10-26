@@ -27,3 +27,6 @@ MUJOCO_LOG.TXT
 
 # 評価用の読み上げ音声 (language.make_audio --voices all で作り直せる)
 assets/audio/eval/
+
+# 講座から配られた動画の OP/ED とスライドの表紙 (講座のロゴ入り)。動画・スライドの作成に使うが、公開リポジトリには載せない
+assets/branding/
