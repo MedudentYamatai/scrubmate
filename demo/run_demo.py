@@ -1,6 +1,6 @@
 """Phase 6: デモシナリオを通しで実行し、動画を書き出す。
 
-    uv run python -m demo.run_demo                 # 本編 + OP/ED + タイトル + 結果のまとめ → outputs/phase6/demo.mp4
+    uv run python -m demo.run_demo                 # OP + イントロ (背景・コンセプト・仕組み) + 本編 + 結果・展望 + ED → outputs/phase6/demo.mp4
     uv run python -m demo.run_demo --main-only     # 本編だけ (確認用。OP/ED をつながない)
     uv run python -m demo.run_demo --no-video      # 映像を描かずに流れだけ確かめる (速い)
     uv run python -m demo.run_demo --main-only --fallback   # 予備のルールだけで解釈して本編を書き出す (実験用)
@@ -23,8 +23,8 @@ import numpy as np
 from control.motion import ArmController
 from demo.agent import ScrubNurse
 from demo.surgeon import Surgeon
-from demo.video import (CYAN, GRAY, GREEN, RED, SPEED, WHITE, YELLOW, Composer, Subtitle, assemble, card,
-                        wav_seconds)
+from demo import slides
+from demo.video import CYAN, GRAY, GREEN, RED, SPEED, WHITE, YELLOW, Composer, Subtitle, assemble, wav_seconds
 from inventory.eval_count import settle
 from inventory.ledger import PLACE_JA, SURGEON
 from language.asr import transcribe
@@ -196,29 +196,6 @@ INTRO_LABELS = [
 ]
 
 
-def title_card():
-    return card([("器械出し＋器械カウントロボット", (20, 20, 20), 76),
-                 ("MuJoCo シミュレーション", (90, 90, 90), 40),
-                 ("", (0, 0, 0), 30),
-                 ("術者の声 → Whisper で書き起こし → 読みで器械名を補正 → Gemini で意図を解釈", (40, 40, 40), 34),
-                 ("→ カメラ (RGB+深度) と YOLO-seg で器械を見つけ、把持点と向きを推定 → 物理接触で掴んで渡す", (40, 40, 40), 34),
-                 ("→ 貸出・返却を台帳で管理し、閉創前に画像で数えて照合。不一致なら警告して停止", (40, 40, 40), 34),
-                 ("", (0, 0, 0), 30),
-                 ("声は macOS の読み上げ音声 (術者: Kyoko / ロボット: Eddy)。ロボットが動く本編は 1.5 倍速", (110, 110, 110), 28)])
-
-
-def results_card():
-    return card([("評価結果 (シミュレーター内)", (20, 20, 20), 64),
-                 ("", (0, 0, 0), 20),
-                 ("検出 (YOLO11n-seg, 合成データで学習)   mask mAP50-95 0.83 / 腕を待避した画像のカウント一致 100%", (40, 40, 40), 32),
-                 ("把持点の推定   位置誤差 平均 2.2mm / 先端の向き 100% (250 回)", (40, 40, 40), 32),
-                 ("pick & place (カメラの推定で掴む)   300 / 300 回成功", (40, 40, 40), 32),
-                 ("器械名の聞き取り   補正前 9/18 → 読みで補正後 18/18 / 意図の解釈 23/23", (40, 40, 40), 32),
-                 ("照合カウント (ランダム 60 場面)   警告の内容が正しい 98.3% / 足りない器械の見逃し 0", (40, 40, 40), 32),
-                 ("", (0, 0, 0), 20),
-                 ("制限: 3 本が絡まった山はほどけない (その場合は「数えきれない」と警告して止まる)", (110, 110, 110), 28)])
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-video", action="store_true")
@@ -256,8 +233,12 @@ def main() -> None:
             total = assemble([("main", comp.path)], comp.audio, "main", out, data.time)
         else:
             out = OUT_DIR / "demo.mp4"
-            parts = [("op", BRANDING / "op.mp4"), ("title", (title_card(), 6.0)), ("main", comp.path),
-                     ("results", (results_card(), 8.0)), ("ed", BRANDING / "ed.mp4")]
+            # イントロ (背景 → コンセプト → 仕組み) と結果・展望は等倍。仕組みの縮小画像は、この実行の記録から作る
+            thumbs = slides.make_thumbs(PIP_DIR, comp.path, OUT_DIR / "demo_log.json", AUDIO_DIR / "d3_sesshi.wav", SPEED)
+            parts = [("op", BRANDING / "op.mp4"), ("background", slides.background_slide()),
+                     ("concept", slides.concept_slide()), ("pipeline", slides.pipeline_slide(thumbs)),
+                     ("main", comp.path), ("results", slides.results_slide()), ("outlook", slides.outlook_slide()),
+                     ("ed", BRANDING / "ed.mp4")]
             total = assemble(parts, comp.audio, "main", out, data.time)
         print(f"saved {out} ({total:.1f} 秒)")
 

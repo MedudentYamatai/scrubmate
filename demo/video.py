@@ -239,7 +239,7 @@ def _mix(clips: list[tuple[float, Path]], seconds: float) -> np.ndarray:
 
 def assemble(parts: list[tuple[str, object]], audio: list[tuple[float, Path]], main_key: str, out: Path,
              main_sim_seconds: float) -> float:
-    """parts = [(名前, 動画のパス | (画像, 秒))] を順につなぐ。audio = (本編のシミュレーター内の時刻, wav) は
+    """parts = [(名前, 動画のパス | スライド | (画像, 秒))] を順につなぐ。audio = (本編のシミュレーター内の時刻, wav) は
     本編の音声トラックにまとめ、高さを変えずに SPEED 倍速に縮めて (atempo) 本編の位置に重ねる。
     OP/ED は 29.97fps だが、30fps として並べる (3 秒で 0.003 秒の差なので気にしない)。"""
     ff = imageio_ffmpeg.get_ffmpeg_exe()
@@ -249,7 +249,11 @@ def assemble(parts: list[tuple[str, object]], audio: list[tuple[float, Path]], m
     offsets = {}
     for key, src in parts:
         offsets[key] = t
-        if isinstance(src, Path):
+        if hasattr(src, "frames"):  # 動きのあるスライド (demo/slides.py)
+            for fr in src.frames():
+                wr.append_data(fr)
+                t += 1 / FPS
+        elif isinstance(src, Path):
             for fr in imageio.get_reader(src):
                 if fr.shape[:2] != (H, W):
                     fr = cv2.resize(fr, (W, H))
