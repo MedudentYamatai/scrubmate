@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "ちょっと待って。",
+  "context": {
+    "現在の工程": "止血",
+    "術者が持っている器械": [
+      "pean (ペアン)"
+    ]
+  },
+  "intent": {
+    "intent": "other",
+    "instrument": null,
+    "step": "止血",
+    "reason": "待機の指示であるため"
+  }
+}

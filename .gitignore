@@ -24,3 +24,6 @@ MUJOCO_LOG.TXT
 # YOLO の事前学習済み重み (自動ダウンロード)。学習済みの本番重みだけは同梱する
 *.pt
 !perception/weights/*.pt
+
+# 評価用の読み上げ音声 (language.make_audio --voices all で作り直せる)
+assets/audio/eval/

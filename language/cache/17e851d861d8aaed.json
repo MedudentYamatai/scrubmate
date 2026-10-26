@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "鑷子、ちょうだい。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "forceps",
+    "step": "剥離",
+    "reason": "術者が鑷子を求めており、鑷子は剥離の工程で使用されるため"
+  }
+}

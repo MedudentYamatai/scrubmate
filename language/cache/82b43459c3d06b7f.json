@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "ペアン、ちょうだい。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "pean",
+    "step": "止血",
+    "reason": "ペアンを要求しているため、止血の工程と判断した。"
+  }
+}

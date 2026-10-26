@@ -1,0 +1,17 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "縫合するのでパレートって",
+  "context": {
+    "現在の工程": "止血",
+    "術者が持っている器械": [
+      "forceps (鑷子)",
+      "pean (ペアン)"
+    ]
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "needle_holder",
+    "step": "縫合",
+    "reason": "縫合の工程で持針器を求めているため"
+  }
+}

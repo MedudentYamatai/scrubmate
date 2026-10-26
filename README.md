@@ -3,7 +3,7 @@
 手術室の「器械出し看護師」役をするロボットアームの MuJoCo シミュレーション。
 音声指示で器械を受け渡しし、画像ベースの器械カウントで遺残疑いを検出する。
 
-> 開発中 (Phase 3: カメラの推定で掴む まで)。完成時に構成図・評価結果・制限事項を追記する。
+> 開発中 (Phase 4: 音声認識と指示の解釈 まで)。完成時に構成図・評価結果・制限事項を追記する。
 
 ## セットアップ
 
@@ -11,7 +11,7 @@
 
 ```bash
 uv sync                 # Python 3.12 + 依存を .venv に入れる
-cp .env.example .env    # API キー等 (Phase 4 以降)
+cp .env.example .env    # GEMINI_API_KEY を入れる (無くてもキャッシュと予備のルールで動く)
 ```
 
 初回実行時に `robot_descriptions` が MuJoCo Menagerie を `~/.cache/robot_descriptions/` に clone する。
@@ -100,6 +100,40 @@ uv run python -m control.pick_place_demo --trials 30        # ランダム配置
 
 - 推定精度 (250 回): 位置誤差は平均 2.1mm、先端方向の正解率は 100%
 - pick & place: 300/300 回成功
+
+### Phase 4: 音声認識と指示の解釈
+
+```bash
+uv run python -m language.make_audio --voices all     # 台詞の音声を macOS の読み上げで作る (デモ用は同梱済み)
+uv run python -m language.interpret --wav assets/audio/demo/d6_are.wav --step 止血 --with forceps pean
+uv run python -m language.interpret --text "次" --step 剥離 --with forceps     # 文字で入力 (デバッグ用)
+uv run python -m language.eval_language                # 5 種類の声で評価 → outputs/phase4/
+```
+
+処理は次の流れで進む。
+
+1. **音声 → 文字**: mlx-whisper (large-v3-turbo) で、Mac の中だけで書き起こす。
+   初回はモデル (約 1.6GB) をダウンロードする。
+2. **読みでの補正**: 書き起こしをひらがなに直し、器械名 5 つ (メス・ハサミ・ペアン・鑷子・持針器) と工程名 4 つの読みに近い部分を、正しい名前に置き換える。
+   例: 接し → 鑷子、自信機 → 持針器、方向 → 縫合。
+3. **意図の解釈**: Gemini (`.env` の `GEMINI_MODEL`) に、決まった形の JSON で答えさせる。
+   形は `{intent, instrument, step, reason}`。
+   「次」「縫合するのであれ取って」は、術式の工程表と、術者が今持っている器械から推定させる。
+
+無料枠で止まらないように、2 つの仕組みを入れている。
+
+- **キャッシュ**: 同じ文・同じ状況なら、前回の答えを `language/cache/` から返す。
+  キャッシュは同梱しているので、API キーが無くてもデモは同じ結果で動く。
+- **予備**: 回数制限 (429)・通信エラー・20 秒の時間切れのときは、キーワードのルールで解釈する。
+
+術者の声は、macOS の読み上げ音声 (Kyoko) で作った。
+声は個人を特定できる情報になりうるので、自分の声は録音していない。
+
+結果 (23 台詞):
+
+- 器械名の聞き取り: 補正前 9/18 → 補正後 18/18
+- 解釈: Gemini 23/23、予備 23/23
+- 他の 4 種類の声では、補正後 11〜16/18 にとどまった (`docs/learning_log.md`)
 
 ## ディレクトリ構成
 

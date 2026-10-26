@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "へいそう前カウント",
+  "context": {
+    "現在の工程": "縫合",
+    "術者が持っている器械": [
+      "needle_holder (持針器)"
+    ]
+  },
+  "intent": {
+    "intent": "count",
+    "instrument": null,
+    "step": "縫合",
+    "reason": "閉創前の器械カウントを依頼しているため"
+  }
+}

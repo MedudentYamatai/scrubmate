@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "ペアン",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "pean",
+    "step": "止血",
+    "reason": "ペアンが要求されており、ペアンは止血の工程で使用されるため"
+  }
+}

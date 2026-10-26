@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "メス",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "scalpel",
+    "step": "皮膚切開",
+    "reason": "術者がメスを求めているため、皮膚切開の工程となる"
+  }
+}

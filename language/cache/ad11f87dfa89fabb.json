@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "持針器",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "needle_holder",
+    "step": "縫合",
+    "reason": "持針器を直接求めており、それは縫合の工程で使われるため"
+  }
+}

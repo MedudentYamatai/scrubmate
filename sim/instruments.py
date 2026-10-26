@@ -24,7 +24,7 @@ JA_NAMES = {
     "scalpel": "メス",
     "needle_holder": "持針器",
     "forceps": "鑷子",
-    "scissors": "剪刀",
+    "scissors": "ハサミ",  # 正式名は剪刀だが、手術室ではハサミと呼ぶことが多い
     "pean": "ペアン",
 }
 

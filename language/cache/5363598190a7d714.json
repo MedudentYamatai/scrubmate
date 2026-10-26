@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "次",
+  "context": {
+    "現在の工程": "剥離",
+    "術者が持っている器械": [
+      "forceps (鑷子)"
+    ]
+  },
+  "intent": {
+    "intent": "next",
+    "instrument": "pean",
+    "step": "止血",
+    "reason": "「次」という発話により剥離の次の工程である止血に進み、止血の典型的な器械であるペアンを選択した"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "鑷子、返します。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": [
+      "forceps (鑷子)"
+    ]
+  },
+  "intent": {
+    "intent": "return",
+    "instrument": "forceps",
+    "step": "皮膚切開",
+    "reason": "術者が持っている鑷子を返す発話のため"
+  }
+}

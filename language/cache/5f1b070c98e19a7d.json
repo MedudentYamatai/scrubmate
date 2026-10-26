@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "ペアン返します。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": [
+      "pean (ペアン)"
+    ]
+  },
+  "intent": {
+    "intent": "return",
+    "instrument": "pean",
+    "step": null,
+    "reason": "術者がペアンを返すと発言しているため"
+  }
+}

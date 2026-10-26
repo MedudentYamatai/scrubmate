@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "機械カウントお願いします",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "count",
+    "instrument": null,
+    "step": null,
+    "reason": "器械カウントの依頼であるため"
+  }
+}

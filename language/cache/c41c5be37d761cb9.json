@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "ハサミ、ちょうだい。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "request",
+    "instrument": "scissors",
+    "step": "剥離",
+    "reason": "ハサミの要求であり、剥離の工程に対応する"
+  }
+}

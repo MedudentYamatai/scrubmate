@@ -12,6 +12,10 @@ dependencies = [
     "imageio>=2.34",
     "imageio-ffmpeg>=0.5",
     "ultralytics>=8.4.188",
+    "mlx-whisper>=0.4.3",
+    "google-genai>=2.33.0",
+    "python-dotenv>=1.2.4",
+    "pykakasi>=2.3.0",
 ]
 
 [tool.uv]

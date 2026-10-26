@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "メス、返します。",
+  "context": {
+    "現在の工程": "開始前",
+    "術者が持っている器械": [
+      "scalpel (メス)"
+    ]
+  },
+  "intent": {
+    "intent": "return",
+    "instrument": "scalpel",
+    "step": "皮膚切開",
+    "reason": "術者がメスを返す旨を発話しているため"
+  }
+}
