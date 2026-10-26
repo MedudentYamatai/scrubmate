@@ -74,6 +74,10 @@ def run_cycle(ctrl: ArmController, kind: str, src, dst, target_yaw: float | tupl
             return res
         est = ests[kind]
         grasp_pos, yaw = est.pos, est.yaw
+        if est.tip_uncertain:
+            # 先端がどちらか自信が無い。掴むことはできるが、置く向き・術者に渡す向きが逆になりうる (Phase 6 で術者に知らせる)
+            print(f"   ⚠ {kind}: 先端の向きが判定できない (確からしさ {est.tip_margin:.2f})", flush=True)
+        res["tip_uncertain"] = bool(est.tip_uncertain)
         res.update(detected=True, est_xy_err_mm=round(float(np.linalg.norm(grasp_pos[:2] - gt_pos[:2]) * 1000), 2),
                    est_yaw_err_deg=round(float(np.degrees(abs(wrap(yaw - gt_yaw)))), 2))
 

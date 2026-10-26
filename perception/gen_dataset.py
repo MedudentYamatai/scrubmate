@@ -3,6 +3,7 @@
     uv run python -m perception.gen_dataset                     # 1500 枚 (train 1200 / val 300)
     uv run python -m perception.gen_dataset -n 200 --out datasets/quick
     uv run python -m perception.gen_dataset --no-random --out datasets/norand   # 実験用: 見た目のランダム化なし
+    uv run python -m perception.gen_dataset -n 600 --spread 2 --crowd 0.5 --out datasets/crowd   # 実験用: ずれ 2 倍 + トレイで重なり
 
 正解ラベルは MuJoCo の segmentation レンダリングで作る:
   通常の描画は「各ピクセルの色」を返すが、segmentation モードは「各ピクセルに写っている物体の ID」を返す。
@@ -52,8 +53,11 @@ def yaw_quat(yaw: float) -> np.ndarray:
 class Randomizer:
     """model / data の見た目と配置を 1 枚ごとに書き換える。元の値を覚えておき、毎回そこからずらす。"""
 
-    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, rng: np.random.Generator, appearance: bool):
+    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, rng: np.random.Generator, appearance: bool,
+                 spread: float = 1.0, crowd: float = 0.0):
         self.m, self.d, self.rng, self.appearance = model, data, rng, appearance
+        self.spread = spread  # 位置・向きのずれの倍率
+        self.crowd = crowd  # 返却トレイに 2〜3 本をまとめて落とす (重なりが起きる) 画像の割合
         self.cam_id = model.camera(CAMERA).id
         self.cam_pos0 = model.cam_pos[self.cam_id].copy()
         self.cam_quat0 = model.cam_quat[self.cam_id].copy()
@@ -74,6 +78,16 @@ class Randomizer:
         n_present = r.choice([5, 5, 5, 4, 4, 3, 2, 1])  # 全部ある画像を多めに、欠品ありも混ぜる
         present = r.permutation(INSTRUMENT_NAMES)[:n_present]
         places = r.permutation(len(PLACES))
+        # 重なりあり: 2〜3 本をトレイの中のランダムな位置に、少しずつ高さを変えて落とす (物理で落ち着かせるのは呼ぶ側)
+        crowded = set()
+        if r.random() < self.crowd and n_present >= 2:
+            crowded = set(present[:r.integers(2, min(3, n_present) + 1)])
+            # 残りの器械は器械台のスロットへ (トレイはまとめて落とす器械で使う)
+            table = [j for j in places if PLACES[j][0] == "table"]
+            rest = [k for k in present if k not in crowded]
+            places = {k: table[j] for j, k in enumerate(rest)}
+        else:
+            places = {k: places[j] for j, k in enumerate(present)}
         truth = []
         for i, kind in enumerate(INSTRUMENT_NAMES):
             jnt = self.m.joint(f"{kind}_free")
@@ -82,10 +96,17 @@ class Randomizer:
                 self.d.qpos[adr:adr + 3] = HIDDEN_POS + [0.3 * i, 0, 0]
                 self.d.qpos[adr + 3:adr + 7] = [1, 0, 0, 0]
                 continue
-            where, slot, (x, y) = PLACES[places[list(present).index(kind)]]
             # 先端の向き: 基本は +x (yaw=0) だが、返却時などに逆向き (yaw=π) になることもある
-            yaw = (np.pi if r.random() < 0.3 else 0.0) + r.normal(0, np.radians(6))
-            pos = np.array([x + r.uniform(-0.01, 0.01), y + r.uniform(-0.01, 0.01), scene.INSTRUMENT_Z])
+            yaw = (np.pi if r.random() < 0.3 else 0.0) + r.normal(0, np.radians(6 * self.spread))
+            if kind in crowded:
+                where, slot = "tray_pile", -1
+                yaw += r.normal(0, np.radians(15))  # 術者が無造作に返したように、向きも大きくばらつかせる
+                k = sorted(crowded).index(kind)
+                pos = np.array([r.uniform(0.46, 0.50), r.uniform(-0.46, -0.34), scene.INSTRUMENT_Z + 0.015 * (k + 1)])
+            else:
+                where, slot, (x, y) = PLACES[places[kind]]
+                d = 0.01 * self.spread
+                pos = np.array([x + r.uniform(-d, d), y + r.uniform(-d, d), scene.INSTRUMENT_Z])
             self.d.qpos[adr:adr + 3] = pos
             self.d.qpos[adr + 3:adr + 7] = yaw_quat(yaw)
             truth.append({"kind": kind, "where": where, "slot": int(slot),
@@ -190,11 +211,13 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("datasets/instruments"))
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-random", action="store_true", help="見た目のランダム化を切る (配置だけランダム)")
+    ap.add_argument("--spread", type=float, default=1.0, help="位置・向きのずれの倍率 (1 = ±1cm・±6°)")
+    ap.add_argument("--crowd", type=float, default=0.0, help="返却トレイで器械が重なる画像の割合 (0〜1)")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
     model, data = scene.build()
-    rand = Randomizer(model, data, rng, appearance=not args.no_random)
+    rand = Randomizer(model, data, rng, appearance=not args.no_random, spread=args.spread, crowd=args.crowd)
 
     renderer = mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
     # 把持点の site などは画像に写らないようにする (実カメラには写らないもの)
@@ -212,6 +235,18 @@ def main() -> None:
     for i in range(args.n):
         split = "val" if i >= args.n - n_val else "train"
         truth = rand.place_instruments()
+        if any(t["where"] == "tray_pile" for t in truth):
+            # 重なりは物理で作る (位置を直接書くと器械どうしがめり込んだ、ありえない形になる)。
+            # 腕を待避させて 1 秒分落とし、落ち着いた後の本当の位置を真値として記録し直す
+            robot.set_arm_qpos(model, data, robot.PARK_QPOS)
+            data.ctrl[:7] = robot.PARK_QPOS
+            data.qvel[:] = 0
+            for _ in range(500):
+                mujoco.mj_step(model, data)
+            for t in truth:
+                b = data.body(t["kind"])
+                t["pos"] = b.xpos.round(5).tolist()
+                t["yaw"] = round(float(np.arctan2(b.xmat[3], b.xmat[0])), 5)
         arm = rand.pose_arm()
         look = rand.appearance_jitter()
         mujoco.mj_forward(model, data)

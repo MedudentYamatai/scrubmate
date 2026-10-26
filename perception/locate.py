@@ -23,7 +23,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from sim.instruments import INSTRUMENT_NAMES, THICK, make_shape
-from sim.scene import BAR_TOP_Z
+from sim import robot
 
 CAMERA = "detect_cam"
 WIDTH, HEIGHT = 1024, 768  # 学習データと同じ解像度・縦横比
@@ -33,6 +33,8 @@ BIN = 0.002  # 幅のプロファイルを取る刻み [m]
 GRID = 0.001  # 真上から見た地図の方眼の間隔 [m]。カメラの 1 画素 (器械台の高さで約 0.9mm) と同程度
 GROW_PX = 5  # 深度でマスクを広げてよい幅 [px] (約 4.5mm)
 PROFILE_HALF = 0.12  # プロファイルを取る範囲 (重心から ±12cm。一番長い器械でも収まる)
+TIP_MARGIN_MIN = 0.1  # 先端判定の確からしさがこれ未満なら、深度だけで作ったシルエットでもう一度判定する
+SECOND_GROW_PX = 12  # 2 回目の判定で、YOLO のマスクの周りをどこまで見るか [px]
 
 
 @dataclass
@@ -42,6 +44,8 @@ class Estimate:
     pos: np.ndarray  # 把持点の world 座標 [m]
     yaw: float  # 先端 (器械ローカルの +x) が向いている方向 [rad]
     tip_margin: float  # 先端判定の確からしさ。0 = 前後どちらとも言えない / 1 = はっきりしている
+    tip_source: str  # 先端を判定した材料: "mask" (YOLO の輪郭) / "depth" (深度だけのシルエット)
+    tip_uncertain: bool  # どちらの材料でも確からしさが TIP_MARGIN_MIN 未満 = 先端不明
     elongation: float  # 細長さ (第 2 主成分 / 第 1 主成分 の標準偏差比)。1 に近いと長手方向が決まらない
     n_px: int
     polygon: np.ndarray  # 画像上の輪郭 (表示用)
@@ -128,6 +132,22 @@ class Locator:
         self.opt = mujoco.MjvOption()
         self.opt.sitegroup[:] = 0  # 把持点の印などは写さない (実カメラには写らないもの)
         self.templates = _build_templates()
+        self.bg_depth = self._background_depth()
+
+    def _background_depth(self) -> np.ndarray:
+        """器械が 1 本も無いときの深度画像 (背景)。実機でいえば、設置時に空の器械台を 1 回撮っておくことに当たる。
+        今の深度がこれより手前 (カメラに近い) なら、そこには器械がある。支持バーやトレイの壁は背景にも写っているので消える。"""
+        d = mujoco.MjData(self.model)
+        for kind in INSTRUMENT_NAMES:
+            adr = self.model.joint(f"{kind}_free").qposadr[0]
+            d.qpos[adr:adr + 3] = [3.0, 3.0, 0.1]  # 視野の外の床へ
+        robot.set_arm_qpos(self.model, d, robot.PARK_QPOS)
+        mujoco.mj_forward(self.model, d)
+        return self.capture(d)[1]
+
+    def _foreground(self, depth: np.ndarray, v: np.ndarray, u: np.ndarray) -> np.ndarray:
+        """画素 (v, u) が背景より 2mm 以上手前か = 器械 (など、背景に無かった物) が写っているか。"""
+        return self.bg_depth[v, u] - depth[v, u] > 0.002
 
     def close(self) -> None:
         self.renderer.close()
@@ -180,14 +200,12 @@ class Locator:
         # マスクの縁や、鑷子の 2 本の腕の隙間からは下の天板・バーが見えている。
         # 上位 10% の高さ = 器械の上面とみなす (上面より高い物は器械の上に無いので、外れ値に強い)
         z_top = float(np.percentile(z, 90))
-        # 深度でマスクを補う: YOLO のマスクの外側 GROW_PX 以内で、支持バーより高い所にある画素 = 器械の取りこぼし。
+        # 深度でマスクを補う: YOLO のマスクの外側 GROW_PX 以内で、背景 (器械が無いときの深度) より手前にある画素 = 器械の取りこぼし。
         # 明るいトレイの上だと、メスの刃が背景に溶けてマスクから欠け、先端を逆に判定したことがあった (評価 layout 18)。
-        # 範囲を狭くしているのは、トレイの壁 (上面 0.76m = 器械の上面と同じ高さ) を拾わないため
+        # 範囲を狭くしているのは、隣の器械を拾わないため
         k = 2 * GROW_PX + 1
         rv, ru = np.nonzero(cv2.dilate(mask, np.ones((k, k), np.uint8)) & (1 - mask))
-        ro, rd = self.rays(data, ru, rv)
-        rz = ro[2] + rd[:, 2] * depth[rv, ru]
-        add = (rz > BAR_TOP_Z + 0.002) & (rz < z_top + 0.002)
+        add = self._foreground(depth, rv, ru)
         u, v = np.concatenate([u, ru[add]]), np.concatenate([v, rv[add]])
         origin, d = self.rays(data, u, v)
         z = origin[2] + d[:, 2] * depth[v, u]
@@ -207,21 +225,62 @@ class Locator:
         e = evecs[:, 1]
         elong = float(np.sqrt(max(evals[0], 0) / max(evals[1], 1e-12)))
 
-        # 先端の判定: 長手方向の符号 (e か −e か) を、形状モデルの幅のプロファイルとの一致度で決める
-        s, t = q @ e, q @ np.array([-e[1], e[0]])
-        prof = _profile(s, t)
-        tmpl = self.templates[kind].profile
-        err_fwd = np.abs(prof - tmpl).sum()  # e の向きが先端だと仮定したときのずれ
-        err_rev = np.abs(prof[::-1] - tmpl).sum()  # 逆向き (s → −s) だと仮定したときのずれ
-        if err_rev < err_fwd:
-            e = -e
-        margin = float(abs(err_fwd - err_rev) / max(err_fwd + err_rev, 1e-9))
+        # 先端の判定 (1 回目): YOLO の輪郭から作った地図で
+        sign, margin = self._tip_sign(kind, xy, e)
+        source = "mask"
+        if margin < TIP_MARGIN_MIN:
+            # 2 回目: 輪郭が不正確だと前後の判定がぶれる (新モデルで鑷子を 1 回逆に判定、確からしさ 0.012)。
+            # 実機なら撮り直すところだが、シミュレーターは何度撮っても同じ画像になる。
+            # そこで YOLO を使わず、深度だけで「支持バーより高い所 = 器械」として切り出したシルエットで判定し直す
+            second = self._depth_silhouette(data, depth, mask, z_top)
+            if second is not None:
+                sign2, margin2 = self._tip_sign(kind, second, e)
+                if margin2 > margin:
+                    sign, margin, source = sign2, margin2, "depth"
+        e = e * sign
 
         grasp_xy = c + e * self.templates[kind].com_offset
         # 把持点の高さ = 上面 − 厚みの半分 (器械の厚みの中央を指で挟む)
         pos = np.array([grasp_xy[0], grasp_xy[1], z_top - THICK / 2])
         return Estimate(kind=kind, conf=float(conf), pos=pos, yaw=float(np.arctan2(e[1], e[0])),
-                        tip_margin=margin, elongation=elong, n_px=len(u), polygon=poly)
+                        tip_margin=margin, tip_source=source, tip_uncertain=margin < TIP_MARGIN_MIN,
+                        elongation=elong, n_px=len(u), polygon=poly)
+
+    def _tip_sign(self, kind: str, xy: np.ndarray, e: np.ndarray) -> tuple[float, float]:
+        """長手方向 e の向きのままが先端なら +1、逆なら −1 と、その確からしさ (0〜1)。
+        長手方向に沿った外形の幅のプロファイルを、形状モデルのものと前向き・逆向きの両方で比べる。"""
+        q = xy - xy.mean(0)
+        prof = _profile(q @ e, q @ np.array([-e[1], e[0]]))
+        tmpl = self.templates[kind].profile
+        err_fwd = np.abs(prof - tmpl).sum()  # e の向きが先端だと仮定したときのずれ
+        err_rev = np.abs(prof[::-1] - tmpl).sum()  # 逆向き (s → −s) だと仮定したときのずれ
+        margin = float(abs(err_fwd - err_rev) / max(err_fwd + err_rev, 1e-9))
+        return (-1.0 if err_rev < err_fwd else 1.0), margin
+
+    def _depth_silhouette(self, data: mujoco.MjData, depth: np.ndarray, mask: np.ndarray,
+                          z_top: float) -> np.ndarray | None:
+        """YOLO を使わず、深度だけで器械のシルエットを切り出し、真上から見た地図の点にする。
+        YOLO のマスクの周り SECOND_GROW_PX 以内で、背景より手前にあり器械の上面以下の画素を集め、
+        つながっている塊のうち YOLO のマスクと一番重なるものを採る (隣の器械を除くため)。
+        最初は「支持バーより高い所」で切り出していたが、トレイの壁 (上面が器械と同じ 0.76m) まで拾い、
+        壁際のメスの先端を逆に判定した → 背景との差に変えた。"""
+        k = 2 * SECOND_GROW_PX + 1
+        v, u = np.nonzero(cv2.dilate(mask, np.ones((k, k), np.uint8)))
+        o, d = self.rays(data, u, v)
+        z = o[2] + d[:, 2] * depth[v, u]
+        high = np.zeros_like(mask)
+        ok = self._foreground(depth, v, u) & (z < z_top + 0.002)
+        high[v[ok], u[ok]] = 1
+        n, labels = cv2.connectedComponents(high)
+        if n <= 1:
+            return None
+        overlap = np.bincount(labels[mask > 0], minlength=n)
+        overlap[0] = 0
+        sv, su = np.nonzero(labels == overlap.argmax())
+        if len(su) < 30:
+            return None
+        o, d = self.rays(data, su, sv)
+        return _grid_points(o[:2] + d[:, :2] * depth[sv, su][:, None])
 
     def locate(self, data: mujoco.MjData) -> tuple[dict[str, Estimate], np.ndarray]:
         """撮影して全器械を推定する。同じ種類が複数検出されたら確信度が一番高いものを採る。"""

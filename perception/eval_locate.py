@@ -2,6 +2,7 @@
 
     uv run python -m perception.eval_locate            # 50 配置 × 5 本 = 250 回の推定
     uv run python -m perception.eval_locate -n 10 --spread 2   # 置き方のばらつきを学習データの 2 倍にする (実験用)
+    uv run python -m perception.eval_locate --spread 2 --weights runs/segment/crowd/weights/best.pt --tag crowd_spread2
 
 置き方は学習データと同じ分布: 器械台 5 + 返却トレイ 3 の場所のどれか、位置 ±1cm、向き ±6° (3 割は先端が逆向き)。
 腕は待避姿勢 (Phase 2 でカウント一致率 100% だった条件)。物理を回して器械をバーの上に落ち着かせてから撮る。
@@ -20,7 +21,7 @@ import mujoco
 import numpy as np
 
 from perception.gen_dataset import PLACES, yaw_quat
-from perception.locate import Locator, draw
+from perception.locate import DEFAULT_WEIGHTS, Locator, draw
 from sim import robot, scene
 from sim.instruments import INSTRUMENT_NAMES
 
@@ -54,11 +55,12 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--spread", type=float, default=1.0, help="位置・向きのばらつきの倍率 (1 = 学習データと同じ)")
     ap.add_argument("--tag", default="", help="出力ファイル名の接尾辞")
+    ap.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS, help="検出器の重み (比較実験用)")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
     model, data = scene.build()
-    loc = Locator(model)
+    loc = Locator(model, weights=args.weights)
     rows, tiles = [], []
     for i in range(args.n):
         random_layout(model, data, rng, args.spread)
@@ -79,6 +81,8 @@ def main() -> None:
                 "axis_err_deg": round(float(np.degrees(min(yaw_err, np.pi - yaw_err))), 2),
                 "tip_ok": bool(yaw_err < np.pi / 2),
                 "tip_margin": round(e.tip_margin, 3),
+                "tip_source": e.tip_source,
+                "tip_uncertain": e.tip_uncertain,
             })
         if i < 4:
             tiles.append(cv2.resize(draw(rgb, ests, truth, loc, data), (768, 576)))
@@ -95,19 +99,22 @@ def main() -> None:
              "xy_err_mean": round(float(xy.mean()), 2), "xy_err_max": round(float(xy.max()), 2),
              "z_err_absmax": round(float(np.abs([r["z_err_mm"] for r in f]).max()), 2),
              "axis_err_mean": round(float(ax.mean()), 2), "axis_err_max": round(float(ax.max()), 2),
-             "tip_acc": round(float(np.mean([r["tip_ok"] for r in f])), 4)}
+             "tip_acc": round(float(np.mean([r["tip_ok"] for r in f])), 4),
+             "tip_by_depth": sum(r["tip_source"] == "depth" for r in f),
+             "tip_uncertain": sum(r["tip_uncertain"] for r in f)}
         summary[kind] = s
         print(f"{kind:14s} {s['missed']:4d}   {s['xy_err_mean']:8.1f} / {s['xy_err_max']:5.1f}       "
               f"{s['z_err_absmax']:8.1f}          {s['axis_err_mean']:6.2f} / {s['axis_err_max']:6.2f}       "
-              f"{s['tip_acc'] * 100:6.1f}%")
+              f"{s['tip_acc'] * 100:6.1f}%   (深度で判定し直し {s['tip_by_depth']} / 先端不明 {s['tip_uncertain']})")
     wrong = [r for r in rows if r["found"] and not r["tip_ok"]]
     for r in wrong:
-        print(f"  先端を逆に判定: layout {r['layout']} {r['kind']} (margin {r['tip_margin']})")
+        print(f"  先端を逆に判定: layout {r['layout']} {r['kind']} (margin {r['tip_margin']}, 判定材料 {r['tip_source']}, "
+              f"{'先端不明と報告済み' if r['tip_uncertain'] else '気づかず'})")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     tag = f"_{args.tag}" if args.tag else ""
     (OUT_DIR / f"locate_metrics{tag}.json").write_text(
-        json.dumps({"args": vars(args), "summary": summary, "rows": rows}, indent=2, ensure_ascii=False))
+        json.dumps({"args": vars(args), "summary": summary, "rows": rows}, indent=2, ensure_ascii=False, default=str))
     cv2.imwrite(str(OUT_DIR / f"locate_examples{tag}.jpg"),
                 np.vstack([np.hstack(tiles[j:j + 2]) for j in range(0, len(tiles) - 1, 2)]))
     print(f"saved {OUT_DIR}/locate_metrics{tag}.json, locate_examples{tag}.jpg")

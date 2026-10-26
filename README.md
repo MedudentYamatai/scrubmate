@@ -60,7 +60,16 @@ uv run python -m perception.train --export              # yolo11n-seg を MPS �
 uv run python -m perception.evaluate                    # mAP・混同行列・カウント一致率 → outputs/phase2/eval_main/
 ```
 
-学習済み重み `perception/weights/instruments_seg.pt` (6MB) は同梱している。学習をやり直さなくても評価・推論できる。
+同梱の学習済み重み `perception/weights/instruments_seg.pt` (6MB) は、Phase 3 で作り直したもの。
+「ずれ 2 倍 + 返却トレイで器械が重なる画像」で学習している (下の Phase 3 の追加実験を参照)。
+再現するには、次を実行する:
+
+```bash
+uv run python -m perception.gen_dataset -n 600 --spread 2 --crowd 0.5 --out datasets/crowd
+uv run python -m perception.train --data datasets/crowd/data.yaml --name crowd --export
+```
+
+この重みがあれば、学習をやり直さなくても評価・推論できる。学習をやり直さなくても評価・推論できる。
 書き出し時に、学習時の絶対パスと git 情報を checkpoint から取り除いている (`perception/train.py` の `export_weights`)。
 
 ### Phase 3: カメラの推定で掴む
@@ -80,6 +89,10 @@ uv run python -m control.pick_place_demo --trials 30        # ランダム配置
    - 向き: 主成分分析 (PCA)
    - 先端側: 外形の幅のプロファイルを形状モデルと照合
 4. 掴み方と手首の回し方を `control/pick_place.py` の `plan_transfer` で決める。Panda の手首は ±166° しか回らないので、限界に当たらない組み合わせを選ぶ。
+
+先端の判定に自信が無いときは、YOLO を使わずに深度だけで作ったシルエットで判定し直す。
+深度だけのシルエットは、器械が無いときの深度画像 (背景) より手前にある所を器械とみなして作る。
+それでも自信が無ければ「先端不明」と報告する。
 
 シミュレーターの真値は `--gt` での比較と評価にだけ使う。
 
