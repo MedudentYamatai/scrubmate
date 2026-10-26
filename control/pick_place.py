@@ -63,7 +63,8 @@ def _wrist_angle(q_ref: np.ndarray, y_ref: float, hand_yaw: float, lo: float, hi
 
 
 def plan_transfer(ctrl: ArmController, grasp_pos: np.ndarray, inst_yaw: float,
-                  place_pos: np.ndarray, place_inst_yaws: float | tuple[float, ...]) -> TransferPlan:
+                  place_pos: np.ndarray, place_inst_yaws: float | tuple[float, ...],
+                  min_margin: float = 0.15) -> TransferPlan:
     """器械 (先端の向き inst_yaw) を、先端が place_inst_yaws のどれかを向くように置くための手の回し方を決める。
     向きを問わない置き場 (返却トレイ) では (0, π) のように複数渡すと、手首に余裕がある方を選ぶ。
 
@@ -76,7 +77,7 @@ def plan_transfer(ctrl: ArmController, grasp_pos: np.ndarray, inst_yaw: float,
     joint7 の可動域は 332° なので、どの場所にも「手が向けない yaw」が約 28° ある。
     例えばトレイでは手の yaw ±180° 付近に向けられず、器械台の右端から先端 180° 向きでトレイに置く組み合わせは解が無かった。"""
     lo, hi = ctrl.ik.lo[6], ctrl.ik.hi[6]
-    min_margin = 0.15  # 手首の限界まで最低これだけ (約 9°) 余裕がある組み合わせだけ使う
+    # min_margin: 手首の限界まで最低これだけ (既定 0.15rad ≈ 9°) 余裕がある組み合わせだけ使う
     q_pick_ref, y_pick_ref = _wrist_reference(ctrl, grasp_pos + [0, 0, APPROACH_HEIGHT])
     q_place_ref, y_place_ref = _wrist_reference(ctrl, place_pos + [0, 0, LIFT_HEIGHT])
     targets = np.atleast_1d(place_inst_yaws)
