@@ -70,8 +70,9 @@ class Slide:
         lines, cur = [], ""
         for tok in tokens:
             if f.getlength(cur + tok) > width and cur and tok not in "、。」）)":
-                lines.append(cur)
-                cur = ""
+                carry = "「" if cur.endswith("「") else ""  # 開きかっこは行末に残さず次の行へ
+                lines.append(cur[:len(cur) - len(carry)])
+                cur = carry
             cur += tok
         lines.append(cur)
         for i, ln in enumerate(lines):
@@ -158,44 +159,45 @@ def _source(s: Slide, t0: float, text: str) -> None:
 
 # ---- 各スライド ----
 def background_slide() -> Slide:
-    s = Slide(9.0)
+    s = Slide(10.0)
     _bands(s)
-    _heading(s, 0.2, "BACKGROUND", "背景: 器械の置き忘れは、数えていても起きる")
-    s.text(0.9, (150, 260), "手術中、器械出し看護師は術者に器械を渡しながら、器械の数を数え続けている。", size=36, color=INK2)
-    s.text(1.2, (150, 316), "閉創前には全部そろっているかを数え、合わなければ閉じない。", size=36, color=INK2)
-    # (カードと結論の文は、右端の帯 (x ≥ 1770) にかからない幅にしてある)
-    # 数字のカード 2 枚 (数字は本文と同じ濃い文字色。差し色は上の細い帯だけ)
+    _heading(s, 0.2, "BACKGROUND", "器械出しは「渡す」と「数える」を同時にこなす仕事")
+    s.text(0.9, (150, 258), "器械出し看護師は、術者が求める器械を素早く渡しながら、", size=36, color=INK2)
+    s.text(1.1, (150, 312), "すべての器械の所在を管理し、置き忘れを防ぐ。", size=36, color=INK2)
+    s.text(1.6, (150, 380), "しかし手術室は忙しく、人の注意には限りがある。数え間違いや記録の誤りは起こりうる。", size=36,
+           bold=True)
+    # 裏付けの数字 (数字は本文と同じ濃い文字色。差し色は上の細い帯だけ)
     for i, (num, unit, label, sub) in enumerate([
-        ("1 / 5,500", "", "手術で器械やガーゼが体内に残る頻度",
-         "米国の高度医療機関の 4 年間の調査。別の調査では入院手術 8,800〜18,760 件に 1 件"),
-        ("62", "%", "遺残が見つかった患者のうち、カウントが「合っている」とされていた割合", "数え間違い・記録の誤りは起きる"),
+        ("1 / 5,500", "", "手術で器械やガーゼが体内に残る頻度", "米国の医療機関の調査"),
+        ("62", "%", "置き忘れが見つかった患者のうち、カウントは「合っている」とされていた割合", "数えていても見落としは起きる"),
     ]):
-        x0, t = 150 + i * 760, 2.0 + i * 1.0
-        s.rect(t, (x0, 420, x0 + 720, 780), CARD, radius=18, outline=(225, 225, 220), dx=0, dy=30)
-        s.rect(t, (x0, 420, x0 + 720, 430), OLIVE, dx=0, dy=30)
-        s.text(t + 0.2, (x0 + 40, 456), num, size=110, bold=True, dx=0, dy=20)
+        x0, t = 150 + i * 760, 2.6 + i * 0.8
+        s.rect(t, (x0, 470, x0 + 720, 790), CARD, radius=18, outline=(225, 225, 220), dx=0, dy=30)
+        s.rect(t, (x0, 470, x0 + 720, 480), OLIVE, dx=0, dy=30)
+        s.text(t + 0.2, (x0 + 40, 500), num, size=104, bold=True, dx=0, dy=20)
         if unit:
-            s.text(t + 0.2, (x0 + 40 + int(_font(110, True).getlength(num)) + 8, 506), unit, size=60, bold=True, dx=0, dy=20)
-        n = s.para(t + 0.4, (x0 + 40, 612), label, width=640, size=28, dx=0, dy=10)
-        s.para(t + 0.5, (x0 + 40, 612 + n * 42 + 8), sub, width=640, size=22, color=INK2, dx=0, dy=10)
-    s.text(4.6, (150, 820), "→ 記録 (台帳) だけに頼らず、実物を目で見て数え直す仕組みが要る。", size=42, bold=True)
-    s.text(5.4, (150, 890), "→ 忙しい手術室でも、渡す・数えるを確実にこなす相棒が欲しい。", size=42, bold=True)
-    _source(s, 1.0, "出典: Cima RR et al. J Am Coll Surg 2008;207:80-7 / Gawande AA et al. N Engl J Med 2003;348:229-35"
-                    " (Grant-Orser A et al. CMAJ 2012;184:1275-8 で確認)")
+            s.text(t + 0.2, (x0 + 40 + int(_font(104, True).getlength(num)) + 8, 546), unit, size=56, bold=True, dx=0,
+                   dy=20)
+        n = s.para(t + 0.4, (x0 + 40, 650), label, width=640, size=28, dx=0, dy=10)
+        s.text(t + 0.5, (x0 + 40, 650 + n * 42 + 6), sub, size=22, color=INK2, dx=0, dy=10)
+    s.text(5.0, (150, 850), "渡す作業を任せ、器械の所在を「記録」と「目」の二重で見張る相棒がいれば、", size=40, bold=True)
+    s.text(5.4, (150, 912), "看護師は患者と術野に集中でき、置き忘れも防げる。", size=40, bold=True, color=OLIVE_DARK)
+    _source(s, 1.0, "出典: Cima RR et al. J Am Coll Surg 2008;207:80-7 / Gawande AA et al. N Engl J Med 2003;348:229-35")
     return s
 
 
 def concept_slide() -> Slide:
-    s = Slide(5.0)
+    s = Slide(6.0)
     _bands(s, big=True)
-    s.text(0.3, (130, 280), "SCRUB NURSE ROBOT", size=34, bold=True, color=OLIVE_DARK)
-    s.text(0.5, (126, 330), "器械出し＋", size=96, bold=True)
-    s.text(0.65, (126, 450), "器械カウントロボット", size=96, bold=True)
-    s.text(1.4, (130, 620), "声で頼まれた器械を渡し、返された器械を片付け、", size=36, color=INK2)
-    s.text(1.6, (130, 676), "閉創前に画像で数えて台帳と照合する。", size=36, color=INK2)
-    s.text(1.8, (130, 732), "合わなければ止まって知らせる。", size=36, color=INK2)
-    s.text(2.4, (130, 850), "MuJoCo シミュレーション / Franka Panda", size=26, color=INK3)
-    s.text(2.5, (130, 892), "Gemini 以外はすべて Mac の上で動作", size=26, color=INK3)
+    s.text(0.3, (130, 250), "SCRUB NURSE ROBOT", size=34, bold=True, color=OLIVE_DARK)
+    s.text(0.5, (122, 290), "ScrubMate", size=170, bold=True)
+    s.text(0.9, (132, 505), "声で渡し、目で数える器械出しロボット", size=48, bold=True, color=INK2)
+    for i, ln in enumerate(["頼まれた器械を、持ち手を向けて渡す",
+                            "返された器械に自分で気づいて片付ける",
+                            "閉創前に画像で数えて台帳と照合し、合わなければ止めて知らせる"]):
+        s.rect(1.5 + i * 0.35, (134, 640 + i * 70, 146, 652 + i * 70), OLIVE_DARK, dx=0)
+        s.text(1.5 + i * 0.35, (166, 626 + i * 70), ln, size=34, color=INK)
+    s.text(2.8, (134, 880), "MuJoCo シミュレーション / Franka Panda", size=26, color=INK3)
     return s
 
 
@@ -231,13 +233,13 @@ def _fit(img: np.ndarray, w: int, h: int) -> np.ndarray:
 def pipeline_slide(thumbs: dict[str, np.ndarray]) -> Slide:
     s = Slide(9.0)
     _bands(s)
-    _heading(s, 0.1, "HOW IT WORKS", "仕組み: 聞く → 解釈する → 見つける → 渡す → 数える")
+    _heading(s, 0.1, "HOW IT WORKS", "聞く → 解釈する → 見つける → 渡す → 数える")
     steps = [
-        ("1", "聞く", "Whisper で書き起こし (Mac の中だけ)", "器械名は読みの近さで補正", "voice"),
-        ("2", "解釈する", "Gemini が決まった形の JSON で答える", "工程表から「次」「あれ」を推定", "json"),
-        ("3", "見つける", "YOLO-seg (合成データで学習)", "深度で 3D に戻し把持点と向き", "detect"),
+        ("1", "聞く", "Whisper で書き起こす", "器械名は読みの近さで補正", "voice"),
+        ("2", "解釈する", "Gemini が意図を JSON で返す", "「次」「あれ」は工程表から推定", "json"),
+        ("3", "見つける", "YOLO-seg と深度で器械を見つける", "把持点と向きを推定", "detect"),
         ("4", "渡す", "微分 IK で腕を動かす", "物理接触で掴み、持ち手を術者へ", "grasp"),
-        ("5", "数える", "台帳 (状態機械) と画像を照合", "合わなければ警告して停止", "count"),
+        ("5", "数える", "台帳と画像を照合する", "合わなければ警告して停止", "count"),
     ]
     cw, gap, x_start, y0 = 300, 30, 130, 260
     for i, (no, title, l1, l2, key) in enumerate(steps):
@@ -251,23 +253,23 @@ def pipeline_slide(thumbs: dict[str, np.ndarray]) -> Slide:
         if i < len(steps) - 1:
             ax = x + cw + 3
             s.poly(t + 0.5, [(ax, y0 + 290), (ax + gap - 6, y0 + 300), (ax, y0 + 310)], OLIVE_DARK, dx=-10)
-    s.text(6.0, (130, 916), "API が使えなくても、キャッシュとキーワードの予備ルールで同じデモが動く。", size=26, color=INK2)
-    s.text(6.3, (130, 960), "把持目標は必ずカメラから得る (シミュレーターの真値は評価だけに使う)。", size=26, color=INK2)
+    s.text(6.0, (130, 930), "掴む位置はすべてカメラの推定から得る。シミュレーターの正解は評価にだけ使う。", size=28, color=INK2)
     return s
 
 
 def results_slide() -> Slide:
     s = Slide(11.0)
     _bands(s)
-    _heading(s, 0.1, "RESULTS", "評価結果 (すべてシミュレーター内で計測)")
+    _heading(s, 0.1, "RESULTS", "評価結果")
+    s.text(0.4, (420, 158), "すべてシミュレーター内で計測", size=28, color=INK3, dx=20)
     # (数字, 書式, 後ろに付ける文字, 見出し, 補足)。数字は数え上げる
     tiles = [
-        (300, "{:.0f}", " / 300", "pick & place 成功", "カメラの推定で掴む・ランダム配置 30 通り"),
-        (2.2, "{:.1f}", " mm", "把持点の推定誤差 (平均)", "250 回・先端の向きの正解 100%"),
-        (0.83, "{:.2f}", "", "検出 mask mAP50-95", "YOLO11n-seg・合成データ 600 枚で学習"),
-        (18, "{:.0f}", " / 18", "器械名の聞き取り", "読みの補正前は 9 / 18・意図の解釈 23 / 23"),
-        (98.3, "{:.1f}", " %", "照合カウントの正解", "ランダム 60 場面 (並べ直しあり)"),
-        (0, "{:.0f}", " / 51", "足りない器械の見逃し", "器械が足りない 51 場面 (重なり多めを含む)"),
+        (300, "{:.0f}", " / 300", "pick & place 成功", "カメラの推定で掴む・置き方 30 通り"),
+        (2.2, "{:.1f}", " mm", "把持点の推定誤差 (平均)", "先端の向きの正解は 100%"),
+        (0.83, "{:.2f}", "", "検出 mask mAP50-95", "YOLO11n-seg・合成データで学習"),
+        (18, "{:.0f}", " / 18", "器械名の聞き取り", "読みの補正前は 9 / 18"),
+        (98.3, "{:.1f}", " %", "照合カウントの正解", "ランダムな 60 場面"),
+        (0, "{:.0f}", " / 51", "足りない器械の見逃し", "器械が足りない 51 場面"),
     ]
     tw, th, gx, gy, x0, y0 = 500, 300, 36, 36, 130, 250
     for i, (val, fmt, suffix, label, sub) in enumerate(tiles):
@@ -282,8 +284,8 @@ def results_slide() -> Slide:
             s.text(t + 0.2, (x + 40 + num_w + 6, y + 78), suffix, size=46, bold=True, color=INK2, dx=0)
         s.text(t + 0.4, (x + 40, y + 170), label, size=32, bold=True, dx=0, dy=10)
         s.text(t + 0.5, (x + 40, y + 222), sub, size=22, color=INK2, dx=0, dy=10)
-    s.text(4.0, (130, 924), "制限: 3 本が絡まった山はほどけない (そのときは「数えきれない」と警告して止まる)。", size=24, color=INK2, dx=0)
-    s.text(4.2, (130, 964), "真上のカメラ 1 台では、横倒しの器械を取り違えることがある。", size=24, color=INK2, dx=0)
+    s.text(4.0, (130, 930), "課題: 絡まった器械の山はほどけず、真上のカメラ 1 台では横倒しの器械を取り違えることがある。", size=26,
+           color=INK2, dx=0)
     return s
 
 
@@ -292,9 +294,9 @@ def outlook_slide() -> Slide:
     _bands(s, big=True)
     s.text(0.2, (130, 250), "NEXT", size=34, bold=True, color=OLIVE_DARK)
     s.text(0.4, (126, 300), "今後の展望", size=84, bold=True)
-    for i, ln in enumerate(["2 台目のカメラ (斜め・横) で、重なり・横倒しの器械を見分ける",
-                            "器械に加えて、ガーゼ・針のカウントへ広げる",
-                            "実機 (Franka) と実際の器械台で、sim2real の差を測る",
+    for i, ln in enumerate(["斜めや横から見る 2 台目のカメラで、重なった器械を見分ける",
+                            "器械に加えて、ガーゼや針のカウントへ広げる",
+                            "実機の Franka と実際の器械台で、シミュレーションとの差を測る",
                             "術者の手の動きから、次に要る器械を先読みする"]):
         s.text(1.0 + i * 0.5, (140, 470 + i * 84), f"・{ln}", size=38, color=INK2)
     return s

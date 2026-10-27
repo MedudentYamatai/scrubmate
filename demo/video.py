@@ -59,13 +59,21 @@ def load_wav16k(path: Path) -> np.ndarray:
         return np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768.0
 
 
+# 読み上げで読み間違えやすい語は、読み上げる文だけかなに置き換える (字幕は漢字のまま)
+TTS_READINGS = {"鑷子": "せっし", "持針器": "じしんき", "器械": "きかい", "閉創": "へいそう", "剥離": "はくり",
+                "止血": "しけつ", "縫合": "ほうごう", "照合": "しょうごう", "未返却": "みへんきゃく", "術者": "じゅつしゃ"}
+
+
 def tts(text: str) -> Path:
     """ロボットの返事を読み上げ音声にする (同じ文は作り直さない)。"""
+    spoken = text
+    for k, v in TTS_READINGS.items():
+        spoken = spoken.replace(k, v)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = TTS_DIR / f"{hashlib.sha256((ROBOT_VOICE + text).encode()).hexdigest()[:12]}.wav"
+    path = TTS_DIR / f"{hashlib.sha256((ROBOT_VOICE + spoken).encode()).hexdigest()[:12]}.wav"
     if not path.exists():
         subprocess.run(["say", "-v", ROBOT_VOICE, "--file-format=WAVE", "--data-format=LEI16@16000",
-                        "-o", str(path), text], check=True)
+                        "-o", str(path), spoken], check=True)
     return path
 
 
