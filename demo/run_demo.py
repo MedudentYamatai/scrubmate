@@ -29,10 +29,12 @@ from inventory.eval_count import settle
 from inventory.ledger import PLACE_JA, SURGEON
 from language.asr import transcribe
 from language.interpret import Interpreter
+from language.utterances import UTTERANCES
 from sim import robot, scene
 from sim.instruments import JA_NAMES
 
 OUT_DIR = Path("outputs/phase6")
+SPOKEN = {u.id: u.text for u in UTTERANCES}  # 台詞 id → 術者が実際に言った文 (字幕に出す)
 PIP_DIR = OUT_DIR / "pip"
 AUDIO_DIR = Path("assets/audio/demo")
 BRANDING = Path("assets/branding")
@@ -116,7 +118,9 @@ class Director:
         print(f"[{t:6.1f}s] 術者: ({uid})", flush=True)
         if self.comp:
             self.comp.play(wav)
-            self.comp.ov.subtitles.append(Subtitle(t, t + dur + 0.3, [("【術者】(話している…)", WHITE)], "surgeon"))
+            # 字幕は術者が実際に言った文 (台詞の正解)。書き起こしの誤りや補正の過程は字幕に出さない (ユーザーと相談して決定)
+            self.comp.ov.subtitles.append(Subtitle(t, t + dur + 0.6, [(f"【術者】「{SPOKEN[uid]}」", WHITE, 32)],
+                                                   "surgeon"))
         # 聞き終えてから書き起こす (人も、言い終わるまで待ってから動く)
         self.timers.append((t + dur + 0.2, lambda: self.heard(uid, wav)))
 
@@ -126,15 +130,15 @@ class Director:
         it = r.intent
         # キャッシュは Gemini が前に出した答えなので「Gemini」と出す (キャッシュや予備は動画では見せない裏の仕組み)
         src = {"cache": "Gemini", "gemini": "Gemini", "fallback": "ルール"}[r.source]
-        fixes = "、".join(f"「{f.heard}」→{f.name}" for f in r.fixes)
         print(f"[{self.data.time:6.1f}s]   書き起こし「{text}」 補正「{r.text}」 → {it.model_dump()} ({r.source})", flush=True)
         self.log.append({"t": round(self.data.time, 2), "uid": uid, "heard": text, "text": r.text,
                          "intent": it.model_dump(), "source": r.source})
         if self.comp:
             t = self.data.time
             inst = JA_NAMES.get(it.instrument, "-") if it.instrument else "-"
-            lines = [(f"【術者】書き起こし「{text}」" + (f"   → 読みで補正: {fixes}" if fixes else ""), WHITE),
-                     (f"   解釈 [{src}]: {it.intent} / 器械 {inst} / 工程 {it.step or '-'}   ({it.reason})", YELLOW)]
+            lines = [(f"【術者】「{SPOKEN[uid]}」", WHITE, 32),
+                     (f"解釈 [{src}]: {it.intent} / 器械 {inst} / 工程 {it.step or '-'}", YELLOW, 28),
+                     (f"理由: {it.reason}", GRAY, 24)]
             self.comp.ov.subtitles.append(Subtitle(t, t + 7.0, lines, "surgeon"))
 
     # ---- 台本 ----

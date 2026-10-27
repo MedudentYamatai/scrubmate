@@ -319,7 +319,7 @@ def make_thumbs(pip_dir: Path, main_video: Path, log_path: Path, wav: Path, spee
     it = heard["intent"]
     return {
         "voice": _waveform(wav, 600, 300),
-        "json": _json_card(272, 250, [f'「{heard["heard"]}」', "↓", f'intent: {it["intent"]}',
+        "json": _json_card(272, 250, [f'「{heard["text"].rstrip("。")}」', "↓", f'intent: {it["intent"]}',
                                       f'instrument: {it["instrument"]}', f'step: {it["step"]}']),
         "detect": pip_at(t_hand),
         "grasp": grasp,

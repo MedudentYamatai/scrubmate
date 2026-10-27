@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 from functools import lru_cache
 
 import numpy as np
@@ -32,3 +33,17 @@ def put_lines(img: np.ndarray, lines: list[tuple[str, tuple[int, int, int]]], or
     for i, (text, col) in enumerate(lines):
         draw.text((x, y + i * step), text, font=f, fill=(*col, 255))
     return np.array(Image.alpha_composite(pil, layer).convert("RGB"))
+
+
+def wrap(text: str, size: int, width: int) -> list[str]:
+    """幅 width [px] に収まるように折り返す。英数字のかたまりは途中で切らず、句読点・閉じかっこは行頭に置かない。"""
+    f = font(size)
+    lines, cur = [], ""
+    for tok in re.findall(r"[0-9A-Za-z.,~〜%+\-/_]+|.", text):
+        if f.getlength(cur + tok) > width and cur and tok not in "、。」）)":
+            carry = "「" if cur.endswith("「") else ""
+            lines.append(cur[:len(cur) - len(carry)])
+            cur = carry
+        cur += tok
+    lines.append(cur)
+    return lines

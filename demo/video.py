@@ -31,7 +31,7 @@ import imageio_ffmpeg
 import mujoco
 import numpy as np
 
-from demo.jptext import put_lines
+from demo.jptext import put_lines, wrap
 
 W, H = 1920, 1080
 MAIN_W, MAIN_H = 1440, 810
@@ -143,10 +143,10 @@ class Composer:
         f = MAIN_H / (2 * np.tan(np.radians(self.model.cam_fovy[self.cam]) / 2))
         return int(pc[0] / -pc[2] * f + MAIN_W / 2), int(-pc[1] / -pc[2] * f + MAIN_H / 2)
 
-    def _side(self) -> np.ndarray:
-        """右パネル (検出カメラの小窓 + 工程・台帳)。中身が変わったときだけ描き直す。"""
+    def _side(self, note: str | None) -> np.ndarray:
+        """右パネル (検出カメラの小窓 + 工程・台帳 + 状況)。中身が変わったときだけ描き直す。"""
         status = self.ov.status() if self.ov.status else []
-        key = (id(self.ov.pip), self.ov.pip_caption, tuple(status))
+        key = (id(self.ov.pip), self.ov.pip_caption, tuple(status), note)
         if self._side_cache and self._side_cache[0] == key:
             return self._side_cache[1]
         img = np.full((MAIN_H, PANEL_W, 3), 24, np.uint8)
@@ -158,25 +158,33 @@ class Composer:
         else:
             y = 46 + int((PANEL_W - 16) * 0.75)
         if self.ov.pip_caption:
-            img = put_lines(img, [(self.ov.pip_caption, YELLOW)], (12, y), size=20, bg=None)
+            img = put_lines(img, [(ln, YELLOW) for ln in wrap(self.ov.pip_caption, 20, PANEL_W - 24)], (12, y),
+                            size=20, bg=None)
         img = put_lines(img, status, (12, y + 40), size=22, bg=None, line_gap=1.4)
+        if note:
+            lines = wrap(f"状況: {note}", 20, PANEL_W - 24)[:3]
+            img = put_lines(img, [(ln, GREEN) for ln in lines], (12, MAIN_H - 16 - 28 * len(lines)), size=20, bg=None)
         self._side_cache = (key, img)
         return img
 
     def _subs(self, t: float) -> np.ndarray:
+        """下の字幕の段。行は (文, 色) か (文, 色, 大きさ)。画面の幅で折り返し、段からはみ出す行は描かない。"""
         active = [s for s in self.ov.subtitles if s.start <= t < s.end]
         # 術者の字幕は最新の 1 つだけ。ロボットの返事も最新の 1 つ
         sur = [s for s in active if s.slot == "surgeon"][-1:]
         rob = [s for s in active if s.slot == "robot"][-1:]
-        notes = [n for tn, n in self.ov.notes if t - 4.0 * SPEED <= tn <= t][-1:]
-        key = (tuple(id(s) for s in sur + rob), tuple(notes))
+        key = tuple(id(s) for s in sur + rob)
         if self._sub_cache and self._sub_cache[0] == key:
             return self._sub_cache[1]
         img = np.full((SUB_H, W, 3), 12, np.uint8)
-        lines = [ln for s in sur for ln in s.lines] + [ln for s in rob for ln in s.lines]
-        img = put_lines(img, lines, (24, 16), size=28, bg=None, line_gap=1.45)
-        if notes:
-            img = put_lines(img, [(f"状況: {notes[0]}", GREEN)], (24, SUB_H - 44), size=24, bg=None)
+        y = 16
+        for ln in [ln for s in sur + rob for ln in s.lines]:
+            text, col, size = (*ln, 30) if len(ln) == 2 else ln
+            for piece in wrap(text, size, W - 48):
+                if y + size > SUB_H - 8:
+                    break
+                img = put_lines(img, [(piece, col)], (24, y), size=size, bg=None)
+                y += int(size * 1.4)
         self._sub_cache = (key, img)
         return img
 
@@ -201,7 +209,8 @@ class Composer:
                              (MAIN_W - 130, MAIN_H - 50), size=28, bg=(0, 0, 0, 150), pad=6)
         out = np.empty((H, W, 3), np.uint8)
         out[:MAIN_H, :MAIN_W] = main
-        out[:MAIN_H, MAIN_W:] = self._side()
+        notes = [n for tn, n in self.ov.notes if t - 4.0 * SPEED <= tn <= t][-1:]
+        out[:MAIN_H, MAIN_W:] = self._side(notes[0] if notes else None)
         out[MAIN_H:] = self._subs(t)
         return out
 
