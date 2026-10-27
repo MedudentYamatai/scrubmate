@@ -74,6 +74,8 @@ class ScrubNurse:
         self.hand_seen_t = -1e9  # 術者の手を最後にトレイの近くに見た時刻
         self.tray_sig: tuple = ()  # 前回の見張りで見えたトレイの中身 (器械と位置 cm)
         self.tray_changed_t = -1e9
+        self.ledger_message = ""  # 不一致の警告文
+        self.ok_message = ""  # 数え直して一致したときの文
 
     # ---- 状態 ----
     def set_phase(self, p: str) -> None:
@@ -92,7 +94,15 @@ class ScrubNurse:
     # ---- メインループ (1 回呼ぶと、指示 1 つか、見張り 1 回か、0.1 秒の待機をする) ----
     def tick(self) -> None:
         if self.phase == "halted":
-            self.ctrl.hold(0.1)
+            # 停止中は受け渡しをしない。受け付けるのはカウント (数え直し) と返却の指示だけ。
+            # 返された器械の記録はするが、回収はしない (数え直して一致するまで器械台に触らない)
+            self.queue = [c for c in self.queue if c.result.intent.intent in ("count", "return")]
+            if self.queue:
+                self.execute(self.queue.pop(0))
+            elif self.data.time - self.last_monitor_t >= MONITOR_EVERY:
+                self.monitor(record_only=True)
+            else:
+                self.ctrl.hold(0.1)
             return
         if self.queue:
             self.execute(self.queue.pop(0))
@@ -130,19 +140,22 @@ class ScrubNurse:
         return int(near.sum()) > 15
 
     # ---- 見張りと回収 ----
-    def monitor(self) -> None:
-        """指示待ちの間の見張り: トレイを撮り、返された器械を台帳に記録し、術者の手が離れていれば 1 本回収する。"""
+    def monitor(self, record_only: bool = False) -> None:
+        """指示待ちの間の見張り: トレイを撮り、返された器械を台帳に記録し、術者の手が離れていれば 1 本回収する。
+        record_only = 記録だけして回収しない (停止中)。"""
         self._park()
         c = self.counter.count(self.data)
         self.last_monitor_t = self.data.time
         tray = [d for d in c.detections if d.region == "tray"]
         for d in tray:
             if self.ledger.state.get(d.kind) == SURGEON:
-                self.ledger.move(d.kind, TRAY, by="surgeon")
+                self.ledger.record_return(d.kind)
                 if d.kind in self.with_surgeon:
                     self.with_surgeon.remove(d.kind)
                 self.note(f"返却を確認: {JA_NAMES[d.kind]}")
                 self.show(draw_count(c, self.loc, self.data, self.ledger)[..., ::-1], f"返却を確認: {JA_NAMES[d.kind]}")
+        if record_only:
+            return
         if self.hand_near_tray(c):
             self.hand_seen_t = self.data.time
         sig = tuple(sorted((d.kind, *np.round(d.pos[:2] * 100).astype(int)) for d in tray))
@@ -220,8 +233,11 @@ class ScrubNurse:
     # ---- カウント ----
     def count(self) -> None:
         first = not self.ledger.established
+        recount = self.ledger.halted
+        # 不一致で止まった後の数え直し。一致すれば止まった状態を解く (一致しなければ、また止まる)
+        self.ledger.halted = False
         self.set_phase("count")
-        self.speak("器械カウントを始めます" if first else "照合カウントを始めます")
+        self.speak("器械カウントを始めます" if first else "もう一度数えます" if recount else "照合カウントを始めます")
         rep = count_request(self.ctrl, self.counter, self.ledger, log=self.note)
         img = draw_count(rep.counts[-1], self.loc, self.data, self.ledger, rep.message, rep.alert)
         self.show(img[..., ::-1], "初期カウント" if first else "照合カウントの結果")
@@ -232,5 +248,7 @@ class ScrubNurse:
             self.set_phase("halted")
         else:
             self.speak(rep.message.split(" (")[0])  # 初期カウントの括弧内 (器械名の一覧) は読み上げない
+            if recount:
+                self.ok_message = rep.message
             self.set_phase("idle")
         self.last_monitor_t = self.data.time

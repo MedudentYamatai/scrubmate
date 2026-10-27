@@ -93,6 +93,7 @@ class Overlay:
     subtitles: list[Subtitle] = field(default_factory=list)
     notes: list[tuple[float, str]] = field(default_factory=list)  # 状況の字幕 (時刻, 文)
     alert: str | None = None
+    ok: str | None = None  # 数え直して一致したときの表示 (緑)
     labels: list[tuple[str, np.ndarray]] = field(default_factory=list)  # シーン紹介の名札 (文, world 座標)
     status: Callable | None = None  # () -> 右パネルに出す行 (工程・台帳)
 
@@ -204,6 +205,10 @@ class Composer:
             if int(t * 2) % 2 == 0:  # 点滅させる
                 cv2.rectangle(main, (0, 0), (MAIN_W - 1, MAIN_H - 1), (255, 40, 40), 14)
             main = put_lines(main, [("【警告】" + self.ov.alert, WHITE)], (40, 40), size=40, bg=(200, 20, 20, 220), pad=14)
+        if self.ov.ok:
+            main = main.copy() if main is not None else main
+            cv2.rectangle(main, (0, 0), (MAIN_W - 1, MAIN_H - 1), (40, 190, 90), 14)
+            main = put_lines(main, [("【OK】" + self.ov.ok, WHITE)], (40, 40), size=40, bg=(20, 150, 70, 230), pad=14)
         if SPEED != 1:
             main = put_lines(main if self.ov.alert or self.ov.labels else main.copy(), [(f"{SPEED:g}倍速", WHITE)],
                              (MAIN_W - 130, MAIN_H - 50), size=28, bg=(0, 0, 0, 150), pad=6)

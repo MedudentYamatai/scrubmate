@@ -55,3 +55,12 @@ UTTERANCES = [
     Utterance("o_thanks", "ありがとう", ("other", None), step="剥離", with_surgeon=("forceps",)),
     Utterance("o_wait", "ちょっと待って", ("other", None), step="止血", with_surgeon=("pean",), tts="ちょっとまって"),
 ]
+
+# デモの締め (Phase 6 で追加): 未返却の警告の後、術者が持針器を見つけて返し、数え直して一致するまで。
+# 評価 (eval_language) の台詞の一覧 (UTTERANCES) には入れない (Phase 4 の評価の数字を変えないため)
+DEMO_ENDING = [
+    Utterance("d9_found", "持針器ありました、返します", ("return", "needle_holder"), step="縫合",
+              with_surgeon=("needle_holder",), tts="じしんき、ありました。かえします", demo=True),
+    Utterance("d10_recount", "もう一度カウントお願いします", ("count", None), step="縫合",
+              tts="もういちど、カウントおねがいします", demo=True),
+]

@@ -1,0 +1,16 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "持針器、ありました。返します。",
+  "context": {
+    "現在の工程": "縫合",
+    "術者が持っている器械": [
+      "needle_holder (持針器)"
+    ]
+  },
+  "intent": {
+    "intent": "return",
+    "instrument": "needle_holder",
+    "step": "縫合",
+    "reason": "術者が持針器を返すと発言したため"
+  }
+}

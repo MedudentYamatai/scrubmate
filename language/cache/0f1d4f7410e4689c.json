@@ -1,0 +1,14 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "text": "もう一度、カウントお願いします。",
+  "context": {
+    "現在の工程": "縫合",
+    "術者が持っている器械": "なし"
+  },
+  "intent": {
+    "intent": "count",
+    "instrument": null,
+    "step": "縫合",
+    "reason": "術者がカウントを依頼しているため。"
+  }
+}

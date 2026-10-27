@@ -29,12 +29,13 @@ from inventory.eval_count import settle
 from inventory.ledger import PLACE_JA, SURGEON
 from language.asr import transcribe
 from language.interpret import Interpreter
-from language.utterances import UTTERANCES
+from language.make_audio import DEMO_VOICE, synth
+from language.utterances import DEMO_ENDING, UTTERANCES
 from sim import robot, scene
 from sim.instruments import JA_NAMES
 
 OUT_DIR = Path("outputs/phase6")
-SPOKEN = {u.id: u.text for u in UTTERANCES}  # 台詞 id → 術者が実際に言った文 (字幕に出す)
+SPOKEN = {u.id: u.text for u in UTTERANCES + DEMO_ENDING}  # 台詞 id → 術者が実際に言った文 (字幕に出す)
 PIP_DIR = OUT_DIR / "pip"
 AUDIO_DIR = Path("assets/audio/demo")
 BRANDING = Path("assets/branding")
@@ -118,6 +119,10 @@ class Director:
         print(f"[{t:6.1f}s] 術者: ({uid})", flush=True)
         if self.comp:
             self.comp.play(wav)
+            # 術者が話し始めたら、残っているロボットの字幕は消す (話し終えた返事が残ると、誰が話しているか紛らわしい)
+            for sub in self.comp.ov.subtitles:
+                if sub.slot == "robot" and sub.end > t:
+                    sub.end = t
             # 字幕は術者が実際に言った文 (台詞の正解)。書き起こしの誤りや補正の過程は字幕に出さない (ユーザーと相談して決定)
             self.comp.ov.subtitles.append(Subtitle(t, t + dur + 0.6, [(f"【術者】「{SPOKEN[uid]}」", WHITE, 32)],
                                                    "surgeon"))
@@ -177,7 +182,16 @@ class Director:
             ("8. 閉創前カウント", lambda: (a.ledger.state["pean"] == "tray" and a.ledger.state["forceps"] == "tray"
                                        and self.speech_free()),
              lambda: (self.log_pile(), self.say("d8_heisou"))),
-            ("終わり", lambda: a.phase == "halted" and d.time - a.phase_t0 >= 6.0 * SPEED, self.finish),
+            # 締め: 術者が術野に残っていた持針器を見つけて返し、数え直して一致するまで
+            ("9. 術者が持針器を見つけて返す", lambda: (a.phase == "halted" and d.time - a.phase_t0 >= 3.0 * SPEED
+                                             and self.speech_free()),
+             lambda: (s.start("return needle_holder", s.return_to_tray("needle_holder", slot=1)),
+                      self.say("d9_found"))),
+            ("10. もう一度カウントお願いします", lambda: (a.ledger.state["needle_holder"] == "tray" and not s.busy
+                                                and self.speech_free() and d.time - self.beat_t >= 1.0),
+             lambda: self.say("d10_recount")),
+            ("終わり", lambda: bool(a.ok_message) and self.speech_free() and d.time - a.phase_t0 >= 3.0 * SPEED,
+             self.finish),
         ]
 
     def end_intro(self) -> None:
@@ -197,9 +211,15 @@ class Director:
     def on_step(self) -> None:
         """制御周期ごと: 術者を 1 歩進める → 時刻の来た予定を実行 → 台本の次の場面の条件を見る → 1 コマ描く。"""
         self.surgeon.update()
-        # 警告の帯は、照合の最終判定で止まったときだけ出す (並べ直す前の途中経過では出さない)
-        if self.comp and self.agent.phase == "halted" and self.comp.ov.alert is None:
-            self.comp.ov.alert = self.agent.ledger_message
+        # 警告の帯は、照合の最終判定で止まったときだけ出す (並べ直す前の途中経過では出さない)。
+        # 数え直して一致したら、警告を消して緑の「カウント一致」を出す
+        if self.comp:
+            if self.agent.phase == "halted" and self.comp.ov.alert is None:
+                self.comp.ov.alert = self.agent.ledger_message
+            if self.agent.phase == "count" and self.comp.ov.alert:
+                self.comp.ov.alert = None
+            if self.agent.ok_message and self.comp.ov.ok is None:
+                self.comp.ov.ok = self.agent.ok_message
         due = [f for t, f in self.timers if self.data.time >= t]
         self.timers = [(t, f) for t, f in self.timers if self.data.time < t]
         for f in due:
@@ -245,6 +265,9 @@ def main() -> None:
         globals()["PILE"] = PILE[::-1]
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for u in DEMO_ENDING:  # 締めの台詞の音声 (無ければ作る。術者の声は Phase 4 と同じ Kyoko)
+        if not (AUDIO_DIR / f"{u.id}.wav").exists():
+            synth(u.tts or u.text, DEMO_VOICE, AUDIO_DIR / f"{u.id}.wav")
     for f in PIP_DIR.glob("*.jpg"):
         f.unlink()
     model, data = scene.build()

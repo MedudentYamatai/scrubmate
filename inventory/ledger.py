@@ -123,6 +123,14 @@ class Ledger:
         self.history.append(ev)
         return ev
 
+    def record_return(self, kind: str) -> Event:
+        """術者が器械をトレイに返したのを記録する (カメラで見えたとき)。停止中でも記録する (返却は確認の一部なので)。"""
+        halted, self.halted = self.halted, False
+        try:
+            return self.move(kind, TRAY, by="surgeon")
+        finally:
+            self.halted = halted
+
     def at(self, place: str) -> list[str]:
         return [k for k, s in self.state.items() if s == place]
 
