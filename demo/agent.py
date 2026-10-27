@@ -26,7 +26,7 @@ from inventory.ledger import SURGEON, TABLE, TRAY, Ledger
 from inventory.procedures import _free_slot, count_request, move_to_table
 from language.interpret import Context, Interpreter, Result
 from perception.locate import Locator, draw
-from sim import robot
+from sim import robot, scene
 from sim.instruments import JA_NAMES
 
 HANDOFF = np.array([0.40, 0.36, 0.95])  # 器械を差し出す点 (TCP)。術者の手の少し手前、トレイの上
@@ -39,6 +39,7 @@ HAND_CLEAR_SEC = 4.0
 # トレイの中身が変わってから、これだけ経つまで回収しない [s]。術者が器械を離す瞬間の手は低く (約 0.78m)、
 # 重なった器械 (約 0.78m) と高さで見分けられず、手を見落として回収を始めたことがあった → 中身が落ち着くのを待つ
 TRAY_SETTLE_SEC = 4.0
+MAX_RETRIEVE_TRIES = 2  # 回収をこの回数失敗したら、その器械はあきらめて人に知らせる
 
 
 @dataclass
@@ -76,6 +77,8 @@ class ScrubNurse:
         self.tray_changed_t = -1e9
         self.ledger_message = ""  # 不一致の警告文
         self.ok_message = ""  # 数え直して一致したときの文
+        self.retry: dict[str, int] = {}  # 回収に失敗した回数
+        self.gave_up: set[str] = set()  # 回収をあきらめた器械 (人に知らせた)
 
     # ---- 状態 ----
     def set_phase(self, p: str) -> None:
@@ -164,6 +167,9 @@ class ScrubNurse:
         if (not tray or self.data.time - self.hand_seen_t < HAND_CLEAR_SEC
                 or self.data.time - self.tray_changed_t < TRAY_SETTLE_SEC):
             return
+        tray = [d for d in tray if d.kind not in self.gave_up]
+        if not tray:
+            return
         d = max(tray, key=lambda d: d.pos[2])  # 上に載っている器械から
         slot = _free_slot(c, prefer=self.ledger.home_slot.get(d.kind))
         if slot is None:
@@ -172,10 +178,25 @@ class ScrubNurse:
         self.show(draw_count(c, self.loc, self.data, self.ledger)[..., ::-1], f"回収: {JA_NAMES[d.kind]} → 器械台")
         self.note(f"回収: {JA_NAMES[d.kind]} をトレイから器械台へ")
         move_to_table(self.ctrl, self.counter, c, d, slot)
-        if self.ledger.state.get(d.kind) == TRAY:
-            self.ledger.move(d.kind, TABLE, by="robot")
-            self.ledger.home_slot[d.kind] = slot
         self._park()
+        # 運べたかを撮り直して確かめてから台帳に付ける。最初は確かめずに付けていて、壁際で掴めなかった器械を
+        # 「器械台に戻した」と記録していた (eval_handoff: 30 回中 2 回)
+        xy = np.array(scene.TABLE_SLOTS[slot])
+        after = self.counter.count(self.data)
+        ok = any(e.kind == d.kind and e.region == "table" and np.hypot(*(e.pos[:2] - xy)) < 0.03
+                 for e in after.detections)
+        if ok:
+            self.retry.pop(d.kind, None)
+            if self.ledger.state.get(d.kind) == TRAY:
+                self.ledger.move(d.kind, TABLE, by="robot")
+                self.ledger.home_slot[d.kind] = slot
+        else:
+            self.retry[d.kind] = self.retry.get(d.kind, 0) + 1
+            self.note(f"回収に失敗: {JA_NAMES[d.kind]} (トレイに残っている)")
+            if self.retry[d.kind] >= MAX_RETRIEVE_TRIES:
+                # 何度やっても掴めない (トレイの壁際など)。人に任せる。台帳はトレイのまま (実物と合っている)
+                self.gave_up.add(d.kind)
+                self.speak(f"トレイの{JA_NAMES[d.kind]}を取れません。確認してください")
         self.set_phase("idle")
         self.last_monitor_t = -1e9  # すぐもう一度見る (トレイに残りがあれば続けて回収)
 

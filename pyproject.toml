@@ -1,7 +1,7 @@
 [project]
-name = "scrub-nurse-robot"
+name = "scrubmate"
 version = "0.1.0"
-description = "器械出し＋器械カウントを行うロボットアームの MuJoCo シミュレーション"
+description = "ScrubMate: 声で渡し、目で数える器械出しロボット (MuJoCo シミュレーション)"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

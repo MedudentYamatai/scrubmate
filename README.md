@@ -1,213 +1,221 @@
-# Scrub Nurse Robot (MuJoCo)
+# ScrubMate — 声で渡し、目で数える器械出しロボット
 
-手術室の「器械出し看護師」役をするロボットアームの MuJoCo シミュレーション。
-音声指示で器械を受け渡しし、画像ベースの器械カウントで遺残疑いを検出する。
+手術室の「器械出し看護師」の仕事を手伝うロボットアームの MuJoCo シミュレーション。
+術者の声で器械を渡し、返された器械を片付け、閉創前には器械を画像で数えて台帳と照合する。
+数が合わなければ「持針器1本未返却。確認してください」と知らせて止まる。
 
-> 開発中 (Phase 6: デモの通し実行と動画 まで)。完成時に構成図・評価結果・制限事項を追記する。
+![受け渡しの様子 (1.5 倍速)](docs/media/demo_handoff.gif)
+
+- デモ動画 (2 分 41 秒、ロボットが動く部分は 1.5 倍速): YouTube のリンクは公開後にここへ追記する
+- 実機は使っていない。すべてシミュレーション (MuJoCo + Franka Emika Panda)
+
+## 背景と目的
+
+器械出し看護師は、術者が求める器械を素早く渡しながら、すべての器械の所在を管理し、置き忘れを防ぐ。
+しかし手術室は忙しく、人の注意には限りがある。数え間違いや記録の誤りは起こりうる。
+
+- 手術で器械やガーゼが体内に残る頻度は、米国の医療機関の調査で 5,500 件に 1 件。置き忘れが見つかった患者の 62% では、カウントは「合っている」とされていた (Cima RR et al. J Am Coll Surg 2008;207:80-7)。
+- 入院手術全体では 8,800〜18,760 件に 1 件という報告もある (Gawande AA et al. N Engl J Med 2003;348:229-35)。
+
+ScrubMate は、渡す作業を引き受けながら、器械の所在を「記録 (台帳)」と「目 (カメラ)」の二重で見張る。
+看護師が患者と術野に集中でき、置き忘れも防げることを目指した。
+
+## できること
+
+| 場面 | ScrubMate の動き |
+|---|---|
+| 「器械カウントお願いします」 | 器械台を撮って 5 本を数え、初期在庫として記録する |
+| 「メス」「鑷子ちょうだい」 | カメラで器械を見つけ、物理接触で掴み、持ち手を術者に向けて渡す |
+| 「次」「縫合するのであれ取って」 | 術式の工程表と、術者が今持っている器械から、次に要る器械を推定する (止血 → ペアン、縫合 → 持針器) |
+| 術者がトレイに器械を返す (無言) | 指示待ちの間にトレイを見張り、返却を台帳に記録して器械台に戻す。回収の途中で指示が来たら、今の 1 本を置いてから応じる |
+| 「閉創前カウント」 | 器械台とトレイを数えて照合する。合わなければトレイの器械を並べ直して数え直し、それでも合わなければ警告して止まる |
+| 持針器を返して「もう一度カウントお願いします」 | 数え直して一致したら「カウント一致。5本すべて確認しました」 |
+
+## 構成
+
+```mermaid
+flowchart LR
+    subgraph 術者
+        V[声 wav<br/>macOS の読み上げ]
+        HAND[手のマーカー<br/>スクリプトで動く]
+    end
+    subgraph 言語
+        ASR[Whisper<br/>mlx-whisper] --> FIX[読みで器械名を補正]
+        FIX --> LLM[Gemini<br/>JSON で意図を返す]
+    end
+    subgraph ScrubMate の頭脳
+        AG[状態機械<br/>指示待ち / 渡す / 回収 / カウント / 停止]
+        LED[台帳<br/>器械台・術者・トレイ]
+    end
+    subgraph 知覚
+        CAM[検出カメラ<br/>RGB + 深度] --> SEG[YOLO-seg<br/>合成データで学習]
+        SEG --> LOC[深度で 3D に戻す<br/>把持点・向き・先端]
+        SEG --> CNT[3D の箱で数える<br/>器械台 / トレイ]
+    end
+    subgraph 制御
+        IK[微分 IK<br/>手首の可動域を考えた掴み方] --> PANDA[Franka Panda<br/>MuJoCo]
+    end
+    V --> ASR
+    LLM --> AG
+    AG --> CAM
+    LOC --> IK
+    CNT --> LED
+    LED --> AG
+    PANDA -- 受け渡し --> HAND
+    HAND -- 返却 --> CAM
+```
+
+- 把持目標はすべてカメラの推定から得る。シミュレーターの正解 (真値) は評価にだけ使う。
+- ロボットの把持は物理接触 (摩擦) で行う。weld 拘束は、術者の手が器械を持つ瞬間 (術者側はスクリプト) にだけ使う。
+- 器械 5 種は全部同じ金属色で、識別用のマーカーは付けていない。形 (上から見たシルエット) だけで見分ける。
+
+| 部分 | 中身 | 主なファイル |
+|---|---|---|
+| シーン | 手術室 (器械台・浮いた支持バー・返却トレイ・術野・術者の手)、器械 5 種 (メス・持針器・鑷子・ハサミ・ペアン)、カメラ 2 台 | `sim/assets/or_scene.xml`, `sim/scene.py`, `sim/instruments.py` |
+| 制御 | 微分 IK (damped least squares)・軌道生成・pick & place | `control/ik.py`, `control/motion.py`, `control/pick_place.py` |
+| 知覚 | 合成データ生成 (自動ラベル・ドメインランダム化)・YOLO-seg の学習と評価・把持点の推定 | `perception/gen_dataset.py`, `perception/train.py`, `perception/locate.py` |
+| 言語 | Whisper・読みでの補正・Gemini の structured output・キャッシュと予備のルール | `language/asr.py`, `language/normalize.py`, `language/interpret.py` |
+| 台帳・カウント | 状態機械の台帳・画像でのカウント・照合と並べ直し | `inventory/ledger.py`, `inventory/count.py`, `inventory/procedures.py` |
+| デモ | 術者のスクリプト・ロボットの頭脳・台本・動画とスライドの合成 | `demo/surgeon.py`, `demo/agent.py`, `demo/run_demo.py`, `demo/video.py`, `demo/slides.py` |
+
+## 評価結果
+
+すべてシミュレーター内で計測した。詳しい表と作り直し方は [docs/results.md](docs/results.md)。
+
+| 項目 | 結果 |
+|---|---|
+| 検出 (本番の重み、検証 300 枚) | mask mAP50 0.995 / mask mAP50-95 0.833。腕を待避させた画像のカウント一致 100% |
+| 把持点の推定 (250 回) | 位置誤差 平均 2.2mm / 最大 8.0mm、先端の向きの正解 100%、見逃し 0 |
+| pick & place (カメラの推定で掴む、ランダムな置き方 30 通り) | **300 / 300 回成功**、置き位置の誤差 平均 2.2mm (真値で掴んだ場合は 1.4mm) |
+| 器械名の聞き取り (デモの声) | 補正前 9 / 18 → 読みで補正後 18 / 18。意図の解釈は Gemini 23 / 23、予備のルール 23 / 23 |
+| 照合カウント (ランダム 60 場面) | 警告の内容が正しい 98.3% (並べ直しなし 91.7%)、誤警告 1 / 28 |
+| 足りない器械の見逃し (器械が足りない 51 場面) | **0 / 51** |
+| 受け渡しと回収 (デモと同じ頭脳、90 回) | 渡す 90 / 90、トレイからの回収 87 / 90 (失敗 3 回は壁際の器械で、3 回とも人に知らせた)、台帳は 90 回とも実物と一致 |
+
+![把持点と向きの推定](docs/media/locate_examples.jpg)
+
+カメラの推定 (色付きの矢印 = 把持点と先端の向き) と、シミュレーターの真値 (白い矢印)。
+
+## 工夫した点
+
+**知覚**
+- 学習データは MuJoCo の segmentation 描画で自動ラベルを作った (人手のアノテーションなし)。置き方・欠品・照明・天板の色・カメラ位置・腕の写り込みを毎枚変えた (ドメインランダム化)。ランダム化を切ると mask mAP50-95 が 0.855 → 0.783 に落ちた。
+- 練習していない状況 (トレイで器械が重なる) は、物理で器械を落として重ねた画像を足して学び直した (重なりのある画像のカウント一致 72% → 85%)。
+- 推定は、マスクの画素を深度で 3D に戻し、真上から見た地図に描き直してから行う (斜めから見た歪みで重心が 3mm ずれていたのが消えた)。先端の向きは、外形の幅のプロファイルを器械の形と照合して決める。自信が無いときは、背景との深度の差だけで作ったシルエットで判定し直す。
+
+**把持と受け渡し**
+- Panda の手首は ±166° しか回らない。掴み方 (2 通り) と回す向き (2 通り) の 4 通りから、手首の限界に当たらない組み合わせを選ぶ (先端を必ず決まった向きで器械台に戻せる、逆向きだった 45 回も全部正しく戻した)。
+- 器械台は浮いた 2 本のバーで器械を支え、指が器械の下に回り込めるようにした。返却トレイの中にも同じバーを入れた。
+- 重なった器械の上の 1 本を掴むときは掴む高さを 4.5mm 上げる (指のパッドが下の器械にかかって 2 本まとめて運んでいた)。壁際の器械は指の開きを狭める。
+
+**言語**
+- Whisper は専門用語に弱い (鑷子 →「接し」、持針器 →「自信機」、縫合 →「方向」)。書き起こしをひらがなに直し、器械名・工程名の読みとの近さで置き換えた (補正前 9/18 → 18/18)。しきい値は別の声で決め、他の 4 つの声で確かめた。
+- Gemini には JSON スキーマ (structured output) で答えさせ、工程表と術者が持っている器械を状況として渡す。無料枠の回数制限に備えて、応答のキャッシュ (同梱) とキーワードの予備ルールを用意した。API キーが無くてもデモは同じ結果で動く。
+
+**台帳とカウント (安全側に倒す)**
+- 台帳は状態機械で、許される移り方 (渡す・返却・戻す) 以外はエラーにする。カメラに写る術者の手の器械は、3D 位置の箱で除いて数えない。
+- 照合が合わなければ、トレイの器械を上から 1 本ずつ並べ直してから数え直す (実際の手術室でも、並べてから数える)。
+- 「重なりが残った」「台帳では術者が持っている器械が見えた」「同じ器械が 2 か所に見えた」ときは、「一致」と言わずに警告する。誤警告は人が確かめれば済むが、見逃しは体内遺残につながるため。評価では、見逃しは 0。
+
+**動画**
+- 術者とロボットは同時に動く (術者の動きは制御周期ごとに 1 歩ずつ進める)。台本は秒数ではなく状況 (指示待ちになった、など) で進む。
+- 映像・声・字幕は、すべてシミュレーター内の時刻でそろえる。計算時間が毎回変わっても同じ動画になる。
+
+## 制限事項
+
+- 実機は使っていない。シミュレーターと実機の差 (摩擦・器械の形・照明・カメラのノイズ) は測っていない。
+- 器械は 5 種 1 本ずつで、形を簡略化している (把持を安定させるため厚さ約 1cm)。ガーゼ・針は数えていない。
+- 器械が絡まって重なった山 (特に 3 本) はほどけない。並べ直しで 2 本まとめて運んだり、横倒しの器械を掴めなかったりする。その場合は「数えきれない」と警告して止まる (重なり多めの評価で、警告の内容が正しいのは 90%)。
+- 真上のカメラ 1 台なので、横倒しの器械や重なりの下の器械を取り違えることがある。取り違えで返却を誤って記録すると、照合の警告の内容が分かりにくくなる (見逃しにはならない)。
+- 術者が器械を返すときは、トレイのバーと直交する向きで、そっと置く必要がある (バーと平行だと間に落ちて傾き、見つけられない)。
+  トレイの壁際に寄せて置かれた器械は掴めないことがある (90 回中 3 回)。その場合は 2 回試してから「取れません」と知らせる。
+- 術者は人体モデルではなく手のマーカーで、動きはスクリプト。声は macOS の読み上げ音声で、人の声では評価していない。読み上げ音声どうしでも、声によって器械名の聞き取りは 11/18〜18/18 と大きく違った。
+- Gemini の解釈は各台詞 1 回ずつしか試していない (答えのぶれは測っていない)。
 
 ## セットアップ
 
-前提: macOS (Apple Silicon), [uv](https://docs.astral.sh/uv/)
+前提: macOS (Apple Silicon)、[uv](https://docs.astral.sh/uv/)
 
 ```bash
 uv sync                 # Python 3.12 + 依存を .venv に入れる
-cp .env.example .env    # GEMINI_API_KEY を入れる (無くてもキャッシュと予備のルールで動く)
+cp .env.example .env    # GEMINI_API_KEY を入れる (無くても、同梱のキャッシュと予備のルールでデモは動く)
 ```
 
-初回実行時に `robot_descriptions` が MuJoCo Menagerie を `~/.cache/robot_descriptions/` に clone する。
+- 初回実行時に、`robot_descriptions` が MuJoCo Menagerie (Panda のモデル) を `~/.cache/robot_descriptions/` に取得する。
+- 音声認識の初回に、Whisper のモデル (whisper-large-v3-turbo、約 1.6GB) を Hugging Face から取得する。
+- 学習済みの検出器の重み `perception/weights/instruments_seg.pt` (6MB) は同梱している (学習時のパスなどは取り除いてある)。
+- ビューアを使うときは `mjpython` が必要 (Mac)。uv の Python で動かすためのラッパ `scripts/mjpython.sh` を使う。
 
 ## 実行
 
-```bash
-# Panda の構造・順運動学を表示し、オフスクリーン描画を outputs/phase0/ に保存
-uv run python -m sim.inspect_panda
+### デモ動画
 
-# ビューア表示 (Mac は mjpython 必須。ラッパ経由で起動)
-./scripts/mjpython.sh -m sim.view_panda           # 関節を正弦波で動かす
-./scripts/mjpython.sh -m sim.view_panda --static  # home 姿勢で静止
+```bash
+uv run python -m demo.run_demo                # OP + イントロ + 本編 + 結果・展望 + ED → outputs/phase6/demo.mp4 (書き出しに約 2 分)
+uv run python -m demo.run_demo --main-only    # 本編だけ (講座から配られた OP/ED が無い場合はこちら)
+uv run python -m demo.run_demo --no-video     # 映像を描かずに流れだけ確かめる (約 20 秒)
+uv run python -m demo.run_demo --main-only --fallback   # Gemini もキャッシュも使わず、予備のルールだけで解釈する
 ```
 
-### Phase 1: シーン・IK・pick & place
+OP/ED とスライドの表紙は講座から配られた素材で、公開リポジトリには含めていない (`assets/branding/`)。
+
+### 各部分を個別に
 
 ```bash
-# pick & place (5 本 × 器械台⇄トレイ往復) の計測。Phase 3 以降はカメラの推定で掴む (--gt で真値)
-uv run python -m control.pick_place_demo [--video] [--only scalpel] [--gt] [--no-gravcomp] [--grip-scale 20]
-./scripts/mjpython.sh -m control.pick_place_demo --viewer   # ビューアで実時間再生
+# シーンと IK
+uv run python -m sim.snapshots                              # シーンの静止画 (全体カメラ・検出カメラ) → outputs/phase1/
+./scripts/mjpython.sh -m control.pick_place_demo --viewer   # ビューアで pick & place を実時間再生
+./scripts/mjpython.sh -m control.teleop                     # 遠隔操作 (キーで目標を動かすと IK で腕が追従)
 
-# シーンの確認用の静止画 (全体カメラ・検出カメラ) → outputs/phase1/
-uv run python -m sim.snapshots
+# 知覚 (合成データ → 学習 → 評価)
+uv run python -m perception.gen_dataset -n 600 --spread 2 --crowd 0.5 --out datasets/crowd   # 本番の重みの学習データ
+uv run python -m perception.train --data datasets/crowd/data.yaml --name crowd --export     # MPS で学習 (約 15 分)
+uv run python -m perception.evaluate                         # mAP・混同行列・カウント一致率 → outputs/phase2/
+uv run python -m perception.eval_locate                      # 把持点・向きの推定精度 → outputs/phase3/
 
-# 遠隔操作 (目標マーカーを動かすと IK で腕が追従)。キー操作は起動したターミナルで
-./scripts/mjpython.sh -m control.teleop
-```
+# 把持
+uv run python -m control.pick_place_demo --trials 30         # ランダムな置き方 30 通り (300 回) の pick & place (約 4 分)
+uv run python -m control.pick_place_demo --random 1 --video  # 1 通りを動画に
 
-| キー (ターミナル) | 動作 |
-|---|---|
-| `w`/`s`, `a`/`d`, `r`/`f` | 目標を 前後 / 左右 / 上下 |
-| `q`/`e` | 手首を回す (yaw) |
-| `space` | グリッパ開閉 |
-| `1`/`2`/`3` | 移動量 1 / 5 / 20 mm |
-| `h` / `z` / `x` | home へ / シーン初期化 / 終了 |
-
-ビューア上ではオレンジの球をダブルクリック → Ctrl+右ドラッグ (移動) / Ctrl+左ドラッグ (回転) でも動かせる。
-
-`scripts/mjpython.sh` が必要な理由: uv の Python は `libpython` を `@rpath` で参照しており、
-`mjpython` の .app バンドル経由だと解決できないため、`DYLD_LIBRARY_PATH` を補っている。
-
-### Phase 2: 合成データ生成と YOLO-seg 学習
-
-```bash
-uv run python -m perception.gen_dataset                 # 1500 枚 (train 1200 / val 300) → datasets/instruments/ (約 8 分)
-uv run python -m perception.show_labels datasets/instruments --split train   # 正解ラベルを重ねた確認画像
-uv run python -m perception.train --export              # yolo11n-seg を MPS で 30 エポック (約 45 分)
-uv run python -m perception.evaluate                    # mAP・混同行列・カウント一致率 → outputs/phase2/eval_main/
-```
-
-同梱の学習済み重み `perception/weights/instruments_seg.pt` (6MB) は、Phase 3 で作り直したもの。
-「ずれ 2 倍 + 返却トレイで器械が重なる画像」で学習している (下の Phase 3 の追加実験を参照)。
-再現するには、次を実行する:
-
-```bash
-uv run python -m perception.gen_dataset -n 600 --spread 2 --crowd 0.5 --out datasets/crowd
-uv run python -m perception.train --data datasets/crowd/data.yaml --name crowd --export
-```
-
-この重みがあれば、学習をやり直さなくても評価・推論できる。
-書き出し時に、学習時の絶対パスと git 情報を checkpoint から取り除いている (`perception/train.py` の `export_weights`)。
-
-### Phase 3: カメラの推定で掴む
-
-```bash
-uv run python -m perception.eval_locate                     # 推定精度 (ランダム配置 50 通り) → outputs/phase3/locate_*.{json,jpg}
-uv run python -m control.pick_place_demo --random 1 --video # ランダム配置で往復 → outputs/phase3/pick_place_rand1.mp4
-uv run python -m control.pick_place_demo --trials 30        # ランダム配置 30 通り (300 回) をまとめて集計 (約 3.5 分)
-```
-
-掴む前に毎回、腕を待避させて検出カメラで RGB と深度を撮り、`perception/locate.py` で器械ごとに推定する。
-
-1. YOLO-seg でマスクを得る。深度を使って、マスクから欠けた器械の縁を補う。
-2. 各画素を深度で 3D に戻し、真上から見た地図 (1mm 方眼) に描き直す。こうすると透視による歪みが消える。
-3. 地図上で求める:
-   - 把持点: 重心
-   - 向き: 主成分分析 (PCA)
-   - 先端側: 外形の幅のプロファイルを形状モデルと照合
-4. 掴み方と手首の回し方を `control/pick_place.py` の `plan_transfer` で決める。Panda の手首は ±166° しか回らないので、限界に当たらない組み合わせを選ぶ。
-
-先端の判定に自信が無いときは、YOLO を使わずに深度だけで作ったシルエットで判定し直す。
-深度だけのシルエットは、器械が無いときの深度画像 (背景) より手前にある所を器械とみなして作る。
-それでも自信が無ければ「先端不明」と報告する。
-
-シミュレーターの真値は `--gt` での比較と評価にだけ使う。
-
-結果:
-
-- 推定精度 (250 回): 位置誤差は平均 2.2mm、先端方向の正解率は 100%
-- pick & place (ランダム配置 30 通り): 300/300 回成功
-
-返却トレイは器械台の術野側の端にある (術者の手から約 0.2m)。
-最初は反対側に置いていたが、術者の手が届かないので移した。数字はすべて移した後に測り直したもの。
-
-### Phase 4: 音声認識と指示の解釈
-
-```bash
-uv run python -m language.make_audio --voices all     # 台詞の音声を macOS の読み上げで作る (デモ用は同梱済み)
+# 音声と解釈
 uv run python -m language.interpret --wav assets/audio/demo/d6_are.wav --step 止血 --with forceps pean
-uv run python -m language.interpret --text "次" --step 剥離 --with forceps     # 文字で入力 (デバッグ用)
-uv run python -m language.eval_language                # 5 種類の声で評価 → outputs/phase4/
+uv run python -m language.interpret --text "次" --step 剥離 --with forceps    # 文字で入力 (デバッグ用)
+uv run python -m language.eval_language                      # 5 種類の声で評価 → outputs/phase4/
+
+# 台帳とカウント
+uv run python -m inventory.count_demo --video                # 台帳とカウントだけでデモの流れを通す
+uv run python -m inventory.eval_count                        # ランダム 60 場面の評価 → outputs/phase5/
+
+# 受け渡しと回収 (デモと同じロボットの頭脳で 30 回)
+uv run python -m demo.eval_handoff --seed 0                  # → outputs/phase7/
+
+# 評価結果のまとめと図
+uv run python -m scripts.export_results                      # outputs/ の評価結果 → docs/results.md と docs/media/
 ```
-
-処理は次の流れで進む。
-
-1. **音声 → 文字**: mlx-whisper (large-v3-turbo) で、Mac の中だけで書き起こす。
-   初回はモデル (約 1.6GB) をダウンロードする。
-2. **読みでの補正**: 書き起こしをひらがなに直し、器械名 5 つ (メス・ハサミ・ペアン・鑷子・持針器) と工程名 4 つの読みに近い部分を、正しい名前に置き換える。
-   例: 接し → 鑷子、自信機 → 持針器、方向 → 縫合。
-3. **意図の解釈**: Gemini (`.env` の `GEMINI_MODEL`) に、決まった形の JSON で答えさせる。
-   形は `{intent, instrument, step, reason}`。
-   「次」「縫合するのであれ取って」は、術式の工程表と、術者が今持っている器械から推定させる。
-
-無料枠で止まらないように、2 つの仕組みを入れている。
-
-- **キャッシュ**: 同じ文・同じ状況なら、前回の答えを `language/cache/` から返す。
-  キャッシュは同梱しているので、API キーが無くてもデモは同じ結果で動く。
-- **予備**: 回数制限 (429)・通信エラー・20 秒の時間切れのときは、キーワードのルールで解釈する。
-
-術者の声は、macOS の読み上げ音声 (Kyoko) で作った。
-声は個人を特定できる情報になりうるので、自分の声は録音していない。
-
-結果 (23 台詞):
-
-- 器械名の聞き取り: 補正前 9/18 → 補正後 18/18
-- 解釈: Gemini 23/23、予備 23/23
-- 他の 4 種類の声では、補正後 11〜16/18 にとどまった (`docs/learning_log.md`)
-
-### Phase 5: 器械カウントと台帳
-
-```bash
-uv run python -m inventory.count_demo --video       # デモの流れ (カウントと台帳のみ) → outputs/phase5/demo_*.jpg, demo.mp4
-uv run python -m inventory.count_demo --pile        # 術者がトレイに器械を重ねて返す場合
-uv run python -m inventory.eval_count               # 評価: ランダムな 60 場面 → outputs/phase5/count_metrics.json
-uv run python -m inventory.eval_count -n 30 --seed 2000 --crowd 1.0 --tag crowd   # 重なり多めの 30 場面
-```
-
-- **台帳** (`inventory/ledger.py`): 器械ごとに「器械台 / 術者 / 返却トレイ」の状態を持つ状態機械。
-  許される移り方は 渡す (器械台・トレイ → 術者)・返却 (術者 → トレイ)・戻す (トレイ → 器械台) だけ。
-- **カウント** (`inventory/count.py`): 腕を待避させて検出カメラで撮り、YOLO-seg の各マスクを深度で 3D に戻す。
-  その位置が器械台・トレイの箱に入るものだけを数える (カメラに写る術者の手の器械は数えない)。
-- **指示との対応**: 「器械カウント」系の指示が来たとき、初期在庫がまだ無ければ初期カウント (記録)、あれば照合カウントにする。
-- **照合カウント** (`inventory/procedures.py`):
-  1. 器械台とトレイを数え、初期在庫・台帳と突き合わせる。
-  2. 合わなければ、トレイの器械を上から 1 本ずつ器械台へ並べ直して数え直す。
-  3. それでも合わなければ「持針器1本未返却。確認してください」のように警告し、待機姿勢で止まる。
-- **安全側に倒す**: 次の場合は「一致」と言わずに警告する。誤警告は人が確かめれば済むが、見逃しは体内遺残につながるため。
-  - 器械が重なったまま (浮いている器械がある)
-  - 台帳では術者が持っている器械が見えた (取り違えの可能性がある)
-  - 同じ器械が 2 か所に見えた
-
-結果 (本番の評価、並べ直しあり。規則は別の開発用の場面だけを見て決めた):
-
-| | ランダム 60 場面 | 重なり多め 30 場面 |
-|---|---|---|
-| 初期カウント一致 | 100% | 100% |
-| 警告の内容が完全に正しい | 98.3% (並べ直しなし 91.7%) | 90.0% (なし 73.3%) |
-| 誤警告 (足りないものは無いのに警告) | 1/28 | 0/11 |
-| 危険な誤り (足りない器械を警告で言わない) | **0/32** | **0/19** |
-
-返却トレイの置き場の間隔は 6cm (最初は 7.5cm)。7.5cm のとき、端の置き場は壁まで 2.7cm しかなく、指が壁に当たって掴めなかった。
-壁際の器械は、指を 4cm に狭めて掴む。
-
-制限: 3 本が絡まった山をほどくのは苦手で、並べ直しても重なりが残ることがある (その場合は「数えきれない」と警告する)。
-
-### Phase 6: デモの通し実行と動画
-
-```bash
-uv run python -m demo.run_demo                # OP + タイトル + 本編 + 結果のまとめ + ED → outputs/phase6/demo.mp4 (約 1.5 分で書き出し)
-uv run python -m demo.run_demo --no-video     # 映像を描かずに流れだけ確かめる (約 15 秒)
-```
-
-OP/ED は講座から配られた素材 (`assets/branding/`、公開リポジトリには含めない)。無い場合は `--main-only` で本編だけを書き出せる。
-
-- **術者** (`demo/surgeon.py`): 手のマーカーを台本どおりに動かす。受け取った器械は術野のドレープに置き、返すときはトレイの置き場にそっと置く。
-- **ロボット** (`demo/agent.py`): 状態機械。指示は渡す・カウントを優先し、指示が無いときは数秒おきにトレイを撮って、返された器械を記録・回収する。
-  回収の途中で指示が来たら、掴んでいる 1 本を置いてから応じる。術者の手がトレイの近くにある間は手を出さない。
-- **台本** (`demo/run_demo.py`): 「ロボットが指示待ちで術者の手も空いた」などの条件で次の場面に進む。
-- **動画** (`demo/video.py`): 全体カメラ + 検出カメラの小窓 + 工程・台帳 + 字幕 (書き起こし → 補正 → 解釈 / ロボットの返事)。
-  本編は映像も声も 1.5 倍速 (画面に表示)。
-- **スライド** (`demo/slides.py`): イントロ (背景・コンセプト・仕組み) と結果・展望。動きを付けて描き、等倍で流す。
 
 ## ディレクトリ構成
 
 | ディレクトリ | 役割 |
 |---|---|
-| `sim/` | シーン XML (`assets/or_scene.xml`)・器械の形状 (`instruments.py`)・シーン組み立て (`scene.py`)・描画 |
-| `control/` | 微分 IK (`ik.py`)・軌道生成 (`motion.py`)・pick & place・遠隔操作 |
-| `perception/` | 合成データ生成・YOLO-seg 学習・推論 |
-| `language/` | Whisper・LLM による指示解釈 |
-| `inventory/` | 器械台帳・カウント |
-| `demo/` | シナリオ実行・動画出力 |
-| `assets/` | 音声などの素材 |
-| `docs/` | 学習ログ・レポート素材 |
+| `sim/` | シーン XML・器械の形状・シーンの組み立て・描画 |
+| `control/` | 微分 IK・軌道生成・pick & place・遠隔操作 |
+| `perception/` | 合成データ生成・YOLO-seg の学習と評価・把持点の推定・学習済みの重み |
+| `language/` | Whisper・読みでの補正・Gemini による解釈・台詞と評価・応答のキャッシュ |
+| `inventory/` | 台帳 (状態機械)・カウント・照合・評価 |
+| `demo/` | 術者のスクリプト・ロボットの頭脳・台本・動画とスライド |
+| `assets/` | 術者の声 (読み上げ音声)。講座の素材 (`branding/`) は含めない |
+| `docs/` | 学習ログ・評価結果のまとめ・図 |
+
+## 開発の記録
+
+Phase ごとの設計判断・失敗と対処・実験の結果は [docs/learning_log.md](docs/learning_log.md) にある (失敗 → 原因 → 対処の形で書いている)。
 
 ## クレジット
 
-- Franka Emika Panda モデル: [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) (Apache-2.0)
+- Franka Emika Panda のモデル: [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) (Apache-2.0)
+- 物理シミュレーター: [MuJoCo](https://github.com/google-deepmind/mujoco) (Apache-2.0)
+- 検出: [Ultralytics YOLO11](https://github.com/ultralytics/ultralytics) (AGPL-3.0)
+- 音声認識: [mlx-whisper](https://github.com/ml-explore/mlx-examples) / OpenAI Whisper (MIT)
+- 指示の解釈: Google Gemini API
+- 術者・ロボットの声: macOS の読み上げ音声 (Kyoko / Eddy)
+- 実装には AI コーディングアシスタント (Claude Code) を使った。

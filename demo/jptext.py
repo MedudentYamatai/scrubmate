@@ -1,6 +1,7 @@
 """日本語の文字を画像に描く。OpenCV の putText は日本語を描けないので、PIL と Mac の日本語フォント (ヒラギノ) を使う。
 
-フォントは環境変数 JP_FONT で差し替えられる (例: JP_FONT=/Library/Fonts/NotoSansJP-Regular.otf)。
+フォントは .env (または環境変数) の JP_FONT で差し替えられる (例: JP_FONT=/Library/Fonts/NotoSansJP-Regular.otf)。
+スライドの太字は JP_FONT_BOLD (demo/slides.py)。
 """
 
 import os
@@ -8,7 +9,10 @@ import re
 from functools import lru_cache
 
 import numpy as np
+from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
+
+load_dotenv()  # .env の JP_FONT を読む
 
 DEFAULT_FONT = "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc"
 

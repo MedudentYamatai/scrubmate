@@ -11,6 +11,7 @@
 """
 
 import json
+import os
 import re
 import wave
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ import imageio.v2 as imageio
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+import demo.jptext  # noqa: F401 (.env を読む)
+
 W, H, FPS = 1920, 1080, 30
 BG = (250, 250, 248)
 INK = (24, 24, 24)
@@ -29,8 +32,9 @@ INK3 = (140, 140, 140)  # 出典など
 OLIVE = (179, 176, 145)  # 講座の OP/ED の帯の色
 OLIVE_DARK = (120, 117, 88)  # 差し色 (見出しの線・番号)
 CARD = (255, 255, 255)
-FONT_W3 = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
-FONT_W6 = "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"
+# .env (または環境変数) の JP_FONT / JP_FONT_BOLD で差し替えられる (demo/jptext.py が .env を読む)
+FONT_W3 = os.environ.get("JP_FONT", "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
+FONT_W6 = os.environ.get("JP_FONT_BOLD", "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc")
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
