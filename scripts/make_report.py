@@ -1,7 +1,7 @@
 """Phase 7: 説明資料 (レポート) を、動画のスライドと同じ見た目で作り、PDF にまとめる。
 
     uv run python -m scripts.make_report                       # → outputs/report/説明資料_PAI最終課題_MedudentYamatai.pdf
-    uv run python -m scripts.make_report --video-url https://youtu.be/xxxx   # 動画の URL を入れる
+    uv run python -m scripts.make_report --video-url https://youtu.be/xxxx   # 動画の URL を変える
 
 数字は docs/results.md と同じ評価結果 (scripts/export_results.py が outputs/ から集めたもの) を使う。
 文字も画像として描いてから PDF にする (提出先で「フォントが原因で正しく表示されない」ことを避けるため)。
@@ -23,6 +23,7 @@ MEDIA = Path("docs/media")
 COVER = Path("assets/branding/slide_cover.jpg")
 REPO_URL = "https://github.com/MedudentYamatai/scrubmate"
 ACCOUNT = "MedudentYamatai"
+VIDEO_URL = "https://youtu.be/QuQ808LdvgI"  # 提出した動画 (YouTube)
 
 
 def img(name: str) -> np.ndarray:
@@ -243,7 +244,7 @@ def p_discussion() -> Slide:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--video-url", help="動画 (YouTube) の URL")
+    ap.add_argument("--video-url", default=VIDEO_URL, help="動画 (YouTube) の URL")
     args = ap.parse_args()
     pages = []
     if COVER.exists():
