@@ -1,6 +1,6 @@
 """Phase 7: 説明資料 (レポート) を、動画のスライドと同じ見た目で作り、PDF にまとめる。
 
-    uv run python -m scripts.make_report                       # → outputs/report/MedudentYamatai.pdf
+    uv run python -m scripts.make_report                       # → outputs/report/説明資料_PAI最終課題_MedudentYamatai.pdf
     uv run python -m scripts.make_report --video-url https://youtu.be/xxxx   # 動画の URL を変える
 
 数字は docs/results.md と同じ評価結果 (scripts/export_results.py が outputs/ から集めたもの) を使う。
@@ -256,7 +256,7 @@ def main() -> None:
     for i, pg in enumerate(pages):
         cv2.imwrite(str(OUT / f"page_{i + 1:02d}.jpg"), pg[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 90])
     ims = [Image.fromarray(p).convert("RGB") for p in pages]
-    pdf = OUT / f"{ACCOUNT}.pdf"  # 提出するファイル名 (ユーザーの指定)
+    pdf = OUT / f"説明資料_PAI最終課題_{ACCOUNT}.pdf"  # 提出要項のファイル名「説明資料_PAI最終課題_omnicampusアカウント名.pdf」
     ims[0].save(pdf, save_all=True, append_images=ims[1:], resolution=150)
     print(f"saved {pdf} ({len(pages)} ページ, {pdf.stat().st_size / 1e6:.1f} MB)")
 
